@@ -23,6 +23,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
+#include <math.h>
 
 WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
         const FLOAT32 *__restrict__ p_inp,
@@ -49,12 +50,20 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
      * quant_min should be >= -8
      * quant_max should be <= 7
      * num_inp_dims should be greater than 0 and less than or equal to 5
+     * p_inp_shape values should be positive
      */
     XA_NNLIB_ARG_CHK_COND((quant_min < INT4_LOWER_LIMIT), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((quant_max > INT4_UPPER_LIMIT), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((quant_max < quant_min), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND(((num_inp_dims <= 0) || (num_inp_dims > MAX_DIMS)),
             UNSUPPORTED_PARAM);
+
+    WORD32 i;
+
+    for (i =  0; i < num_inp_dims; i++)
+    {
+        XA_NNLIB_ARG_CHK_COND((p_inp_shape[i] <= 0), UNSUPPORTED_PARAM);
+    }
 
     /* Number of elements to be processed with a stride of 1 */
     WORD32 num_elm = CONST_ONE;
@@ -68,10 +77,12 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
     if (p_axis == NULL)
     {
         /*
-         * out_scale should not be equal to zero
+         * out_scale should not be equal to zero, nan and infinity
          */
-        XA_NNLIB_ARG_CHK_COND((0 == *p_out_scale), UNSUPPORTED_PARAM);
-        for (WORD32 i = 0; i < num_inp_dims; i++)
+        XA_NNLIB_ARG_CHK_COND(
+                ((0 == *p_out_scale) || (isnan(*p_out_scale)) ||
+                        (isinf(*p_out_scale))), UNSUPPORTED_PARAM);
+        for (i =  0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
         }
@@ -82,23 +93,26 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
 
         /* Invalid input checks
          * axis should be in the range [0,num_inp_dims-1]
-         * out_scale should not be equal to zero
+         * out_scale should not be equal to zero, nan and infinity
          */
+
         XA_NNLIB_ARG_CHK_COND(((axis < 0) || (axis >= num_inp_dims)),
                 UNSUPPORTED_PARAM);
-        for (WORD32 i = 0; i < p_inp_shape[axis]; i++)
+        for (i =  0; i < p_inp_shape[axis]; i++)
         {
-            XA_NNLIB_ARG_CHK_COND((0 == p_out_scale[i]), UNSUPPORTED_PARAM);
+            XA_NNLIB_ARG_CHK_COND(
+                    ((0 == p_out_scale[i]) || (isnan(p_out_scale[i])) ||
+                            (isinf(p_out_scale[i]))), UNSUPPORTED_PARAM);
         }
 
         /* Calculating leading dims */
-        for (WORD32 i = 0; i < axis; i++)
+        for (i =  0; i < axis; i++)
         {
             leading_dims *= p_inp_shape[i];
         }
 
         /* Calculating trailing dims */
-        for (WORD32 i = axis + CONST_ONE; i < num_inp_dims; i++)
+        for (i =  axis + CONST_ONE; i < num_inp_dims; i++)
         {
             trailing_dims *= p_inp_shape[i];
         }
@@ -122,8 +136,11 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
     WORD8 *__restrict__ out_base;
 
     /* Vector pointers for the base pointers */
-    xb_vecMxf32 *__restrict__ inp_base_p;
-    xb_vecMx8 *__restrict__ out_base_p;
+    xb_vecMxf32 *__restrict__ inp_base_p1;
+    xb_vecMx8 *__restrict__ out_base_p1;
+
+    xb_vecMxf32 *__restrict__ inp_base_p2;
+    xb_vecMx8 *__restrict__ out_base_p2;
 
     /* Calculating number of simd and scalar operations */
     WORD32 num_simd4_ops = (num_elm >> LOG2_PDX_M);
@@ -133,8 +150,13 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
     WORD32 m_32 = num_scalar_ops * SIZE_OF_FLOAT;
     WORD32 m_8 = num_scalar_ops * SIZE_OF_INT8;
 
-    valign align_inp, align_out;
-    align_out = PDX_Z_ALIGN();
+    valign align_inp1, align_out1;
+    align_out1 = PDX_Z_ALIGN();
+
+    valign align_inp2, align_out2;
+    align_out2 = PDX_Z_ALIGN();
+
+    WORD32 two_times_lps = CONST_TWO * length_per_step;
 
     xb_vecMxf32 d_inp_t;
 
@@ -149,8 +171,10 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
     xb_int32 converted_scf = PDX_AND_32(actual_scf, 0xFFFFFCFF);
     PDX_MOVSCF_32(converted_scf);
 
+    WORD32 axis_index, leading_dims_index;
+
     /* Outermost loop iterates over the channels */
-    for (WORD32 axis_index = 0; axis_index < axis_count; axis_index++)
+    for (axis_index = 0; axis_index < axis_count; axis_index++)
     {
         d_out_scale = p_out_scale[axis_index];
         inp_base = p_inp + (axis_index * trailing_dims);
@@ -162,37 +186,88 @@ WORD32 xa_nn_elm_quantize_f32_sym4(WORD8 *__restrict__ p_out,
          * All the elements are quantized at a time for
          * single scale once loaded
          */
-        for (WORD32 leading_dims_index = 0; leading_dims_index < leading_dims;
-                leading_dims_index++)
+        for (leading_dims_index = 0;
+                leading_dims_index < leading_dims - CONST_ONE;
+                leading_dims_index += CONST_TWO)
         {
-            inp_base_p = (xb_vecMxf32*) inp_base;
-            align_inp = PDX_LA_MXF32_PP(inp_base_p);
-            out_base_p = (xb_vecMx8*) out_base;
-            for (WORD32 i = 0; i < num_simd4_ops; i++)
+            inp_base_p1 = (xb_vecMxf32*) inp_base;
+            align_inp1 = PDX_LA_MXF32_PP(inp_base_p1);
+            out_base_p1 = (xb_vecMx8*) out_base;
+
+            inp_base_p2 = (xb_vecMxf32*) (inp_base + length_per_step);
+            align_inp2 = PDX_LA_MXF32_PP(inp_base_p2);
+            out_base_p2 = (xb_vecMx8*) (out_base + length_per_step);
+
+            for (i =  0; i < num_simd4_ops; i++)
             {
-                PDX_LA_MXF32_IP(d_inp, align_inp, inp_base_p);
+                PDX_LA_MXF32_IP(d_inp, align_inp1, inp_base_p1);
                 d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
                 d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
                 d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
                 clamped = PDX_MIN_MX32(d_out32, max);
                 clamped = PDX_MAX_MX32(clamped, min);
 
-                PDX_SA32_MX8_IP(clamped, align_out, out_base_p);
+                PDX_SA32_MX8_IP(clamped, align_out1, out_base_p1);
+
+                PDX_LA_MXF32_IP(d_inp, align_inp2, inp_base_p2);
+                d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
+                d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
+                d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
+                clamped = PDX_MIN_MX32(d_out32, max);
+                clamped = PDX_MAX_MX32(clamped, min);
+
+                PDX_SA32_MX8_IP(clamped, align_out2, out_base_p2);
 
             }
-            PDX_LAV_MXF32_XP(d_inp, align_inp, inp_base_p, m_32);
+            PDX_LAV_MXF32_XP(d_inp, align_inp1, inp_base_p1, m_32);
             d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
             d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
             d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
             clamped = PDX_MIN_MX32(d_out32, max);
             clamped = PDX_MAX_MX32(clamped, min);
 
-            PDX_SAV32_MX8_XP(clamped, align_out, out_base_p, m_8);
-            PDX_SAPOS_MX8_FP(align_out, out_base_p);
+            PDX_SAV32_MX8_XP(clamped, align_out1, out_base_p1, m_8);
+            PDX_SAPOS_MX8_FP(align_out1, out_base_p1);
 
-            inp_base = inp_base + length_per_step;
-            out_base = out_base + length_per_step;
+            PDX_LAV_MXF32_XP(d_inp, align_inp2, inp_base_p2, m_32);
+            d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
+            d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
+            d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
+            clamped = PDX_MIN_MX32(d_out32, max);
+            clamped = PDX_MAX_MX32(clamped, min);
 
+            PDX_SAV32_MX8_XP(clamped, align_out2, out_base_p2, m_8);
+            PDX_SAPOS_MX8_FP(align_out2, out_base_p2);
+
+            inp_base = inp_base + two_times_lps;
+            out_base = out_base + two_times_lps;
+        }
+        if ((leading_dims % CONST_TWO) != 0)
+        {
+            inp_base_p1 = (xb_vecMxf32*) inp_base;
+            align_inp1 = PDX_LA_MXF32_PP(inp_base_p1);
+            out_base_p1 = (xb_vecMx8*) out_base;
+
+            for (i =  0; i < num_simd4_ops; i++)
+            {
+                PDX_LA_MXF32_IP(d_inp, align_inp1, inp_base_p1);
+                d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
+                d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
+                d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
+                clamped = PDX_MIN_MX32(d_out32, max);
+                clamped = PDX_MAX_MX32(clamped, min);
+
+                PDX_SA32_MX8_IP(clamped, align_out1, out_base_p1);
+            }
+            PDX_LAV_MXF32_XP(d_inp, align_inp1, inp_base_p1, m_32);
+            d_inp_t = PDX_MUL_MXF32(d_inp, d_one_over_out_scale);
+            d_inp_t = PDX_FIRINT_MXF32(d_inp_t);
+            d_out32 = PDX_TRUNC32_MXF32(d_inp_t, SHIFT_FACTOR_4_BIT);
+            clamped = PDX_MIN_MX32(d_out32, max);
+            clamped = PDX_MAX_MX32(clamped, min);
+
+            PDX_SAV32_MX8_XP(clamped, align_out1, out_base_p1, m_8);
+            PDX_SAPOS_MX8_FP(align_out1, out_base_p1);
         }
     }
 

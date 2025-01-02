@@ -341,6 +341,141 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 * p_out,                                /*!
         WORD32 num_inp_dims,                                                 /*!< [in] number of input dimensions */
         WORD32 *p_axis);                                                     /*!< [in] pointer to axis along which softmax will be calculated */
 
+WORD32 xa_nn_slice(WORD8 *__restrict__ p_out,                                /*!< [out] output pointer */
+        const WORD32 *const p_out_shape,
+        const WORD8 *__restrict__ p_inp,
+        const WORD32 *const p_inp_shape,
+        WORD32 num_inp_dims,                                                 // number of dimensions in input
+        WORD32 start,
+        WORD32 end,
+        WORD32 step,
+        WORD32 axis,                                                        // dimension along which slicing to be done
+        WORD32 elm_size);                                                  // number of bytes for each element
+
+WORD32 xa_nn_permute(WORD8 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD8 *__restrict__ p_inp,
+        const WORD32 *const p_inp_shape,
+        const WORD32 *__restrict__ p_permute_vec,
+        WORD32 num_inp_dims,
+        WORD32 elm_size);
+
+WORD32 xa_nn_elm_sub_f32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const FLOAT32 *p_inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_f32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const FLOAT32 inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_f32xf32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const FLOAT32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const FLOAT32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        FLOAT32 alpha);
+
+WORD32 xa_nn_elm_sub_32x32_32(WORD32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 *p_inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_32x32_32(WORD32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const WORD32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        WORD32 alpha);
+
+WORD32 xa_nn_elm_exp_f32_f32(FLOAT32 *__restrict__ p_out,
+        const FLOAT32 *p_inp,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_f32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const FLOAT32 *p_inp2,
+        WORD32 mode,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_scalar_f32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const FLOAT32 inp2,
+        WORD32 mode,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_broadcast_5D_f32xf32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const FLOAT32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const FLOAT32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 mode,
+        WORD32 num_inp_dims);
+
+WORD32 xa_nn_elm_div_32x32_32(WORD32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 *p_inp2,
+        WORD32 mode,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_32x32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 *p_inp2,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_scalar_32x32_32(WORD32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 inp2,
+        WORD32 mode,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_scalar_32x32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const WORD32 inp2,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_div_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const WORD32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 mode,
+        WORD32 num_inp_dims);
+
+WORD32 xa_nn_elm_div_broadcast_5D_32x32_f32(FLOAT32 * __restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD32 * __restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const WORD32 * __restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims);
+
+WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        WORD32 num_out_dims,
+        const FLOAT32 *__restrict__ p_inp,
+        const WORD32 *const p_inp_shape,
+        WORD32 num_inp_dims,
+        const WORD32 *__restrict__ p_axis,
+        WORD32 num_axis_dims,
+        void *__restrict__ p_scratch_in);
+
 #if defined(__cplusplus)
 }
 #endif
