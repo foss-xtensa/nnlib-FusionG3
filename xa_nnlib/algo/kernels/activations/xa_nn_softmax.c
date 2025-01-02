@@ -71,10 +71,10 @@
 }
 
 WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
-                             const FLOAT32 *p_inp,
-                             const WORD32 *p_inp_shape,
-                             WORD32 num_inp_dims,
-                             WORD32 *p_axis)
+        const FLOAT32 *p_inp,
+        const WORD32 *p_inp_shape,
+        WORD32 num_inp_dims,
+        WORD32 *p_axis)
 {
     WORD32 i, j, dim = 0;
 
@@ -82,6 +82,11 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
     XA_NNLIB_ARG_CHK_PTR(p_inp, UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_PTR(p_out, UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_PTR(p_inp_shape, UNSUPPORTED_PARAM);
+
+    /* Pointer alignment checks */
+    XA_NNLIB_ARG_CHK_ALIGN(p_out, sizeof(FLOAT32), UNSUPPORTED_PARAM);
+    XA_NNLIB_ARG_CHK_ALIGN(p_inp, sizeof(FLOAT32), UNSUPPORTED_PARAM);
+    XA_NNLIB_ARG_CHK_ALIGN(p_inp_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
 
     /* Basic Parameter checks */
     XA_NNLIB_ARG_CHK_COND((num_inp_dims <= 0), UNSUPPORTED_PARAM);
@@ -109,12 +114,12 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
         inner_count = p_inp_shape[dim];
 
         /* Calculate number of elements of leading dimensions */
-        for (int i = 0; i < dim; i++)
+        for (i = 0; i < dim; i++)
         {
             leading_dim *= p_inp_shape[i];
         }
 
-        for (int i = dim + 1; i < num_inp_dims; i++)
+        for (i = dim + CONST_ONE; i < num_inp_dims; i++)
         {
             inner_stride *= p_inp_shape[i];
         }
@@ -130,51 +135,78 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
     if (inner_stride == CONST_ONE)
     {
         xb_vecMxf32 x0, x1, max_vec;
-        xb_vecMxf32 *restrict p_out_mxf32 = (xb_vecMxf32 *)p_out;
-        xb_vecMxf32 *restrict p_out_exp_mxf32 = (xb_vecMxf32 *)p_out;
+        xb_vecMxf32 *restrict p_out_mxf32 = (xb_vecMxf32*) p_out;
+        xb_vecMxf32 *restrict p_out_exp_mxf32 = (xb_vecMxf32*) p_out;
         xb_vecMxf32 *restrict p_out_softmax_mxf32 = p_out_exp_mxf32;
 
-        /* Calculate number of remaining elements after processing inner loop*/
-        WORD32 rem_elem_bytes = (inner_count & (PDX_M - 1)) << LOG2_SIZE_FLOAT;
+        /* Calculate number of remaining elements after processing inner loop
+         * of exponent and softmax calculations */
+        WORD32 rem_elem_bytes = (inner_count & (PDX_M - CONST_ONE))
+                << LOG2_SIZE_FLOAT;
 
-        /* Set 4-way vboolM vector bit to true based on remaining elements */
-        xb_vecMx32 rem_elem_vec = rem_elem_bytes;
         xb_vecMx32 list_rem_bytes = {4, 8, 12, 16};
+
+        /* Set 4-way vboolM vector bit to true based on remaining elements
+         * after processing inner loop of exponent and softmax calculations */
+        xb_vecMx32 rem_elem_vec = rem_elem_bytes;
 
         /* Set flag only for the remaining elements */
         vboolM bool_vec = PDX_GE_MX32(rem_elem_vec, list_rem_bytes);
 
-        const xb_vecMxf32 *restrict p_in_exp_mxf32 = (const xb_vecMxf32 *)p_inp;
+        /* Calculate number of remaining elements after processing inner loop
+         * of maximum value calculation */
+        WORD32 rem_elem_bytes_8 = (inner_count & (PDX_2M - CONST_ONE))
+                << LOG2_SIZE_FLOAT;
+
+        /* Set 4-way vboolM vector bit to true based on remaining elements
+         * after processing inner loop of maximum value calculation */
+        xb_vecMx32 rem_elem_vec_8 = rem_elem_bytes_8;
+
+        /* Set flag only for the remaining elements */
+        vboolM bool_vec_8 = PDX_GE_MX32(rem_elem_vec_8, list_rem_bytes);
+
+        /* Calculate number of remaining elements after processing inner loop
+         * of maximum value calculation */
+
+        WORD32 rem_elem_bytes_max_4 = rem_elem_bytes_8
+                - (PDX_M << LOG2_SIZE_FLOAT);
+
+        vboolM bool_vec_max_4 = PDX_GE_MX32(rem_elem_bytes_max_4,
+                list_rem_bytes);
+
+        const xb_vecMxf32 *restrict p_in_exp_mxf32 = (const xb_vecMxf32*) p_inp;
         valign ax_inp = PDX_LA_MXF32_PP(p_in_exp_mxf32);
 
-        /* Loop count of maximum value calculation*/
-        WORD32 count = inner_count - PDX_M;
-
         /* Offset from base address to load inputs for maximum value calculation */
-        WORD32 offset2 = ((count - (count & (PDX_2M - 1))) >> 1) + PDX_M;
+        WORD32 offset2 = ((inner_count - (inner_count & (PDX_2M - CONST_ONE)))
+                >> CONST_ONE);
 
         const FLOAT32 *p_inp_out_itr = p_inp;
         for (i = 0; i < leading_dim; i++)
         {
-            const xb_vecMxf32 *restrict p_in_mxf32 = (const xb_vecMxf32 *)p_inp_out_itr;
-            const xb_vecMxf32 *restrict p_in_max_mxf32 =
-                    (const xb_vecMxf32 *)(p_inp_out_itr + offset2);
+            vboolM a;
+            FLOAT32 max_elem = 0;
+            valign ax;
 
-            p_inp_out_itr += inner_count;
+            const xb_vecMxf32 *restrict p_in_mxf32 =
+                    (const xb_vecMxf32*) p_inp_out_itr;
+
+            /* If number of elements for which softmax will be computed is greater than 4*/
+            const xb_vecMxf32 *restrict p_in_max_mxf32 =
+                    (const xb_vecMxf32*) (p_inp_out_itr + offset2);
 
             /* Align load priming of input */
-            valign ax = PDX_LA_MXF32_PP(p_in_mxf32);
+            ax = PDX_LA_MXF32_PP(p_in_mxf32);
             valign ax_max = PDX_LA_MXF32_PP(p_in_max_mxf32);
 
-            FLOAT32 max_elem = 0;
+            /* Initializing maximum vector with min value of single precision float */
 
-            /* Aligning load input (4-way) */
-            PDX_LA_MXF32_IP(max_vec, ax, p_in_mxf32);
+            max_vec = F32_MIN_VALUE;
 
             /* Calculate maximum value among elements for which softmax will be computed */
 
             /* Loop runs for inner_count/8 iterations */
-            for (j = 0; j < (count >> LOG2_PDX_2M); j++)
+            for (j = 0; j < (inner_count >> LOG2_PDX_2M); j++)
             {
                 /* Load input (4-way) */
                 PDX_LA_MXF32_IP(x0, ax, p_in_mxf32);
@@ -185,22 +217,17 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                 max_vec = PDX_MAXNUM_MXF32(max_vec, x0);
             }
 
-            if ((count & (PDX_2M - 1)) >= PDX_M)
-            {
-                /* Load input (4-way) */
-                PDX_LA_MXF32_IP(x1, ax_max, p_in_max_mxf32);
+            /* Process remaining elements */
+            PDX_LAV_MXF32_XP(x1, ax_max, p_in_max_mxf32, rem_elem_bytes_8);
+            PDX_MAXNUM_MXF32_T(max_vec, max_vec, x1, bool_vec_8);
 
-                /* Calculate max value 4-way */
-                max_vec = PDX_MAXNUM_MXF32(max_vec, x1);
-            }
-
-            vboolM a;
-
-            PDX_LAV_MXF32_XP(x0, ax_max, p_in_max_mxf32, rem_elem_bytes);
-            PDX_MAXNUM_MXF32_T(max_vec, max_vec, x0, bool_vec);
+            PDX_LAV_MXF32_XP(x0, ax_max, p_in_max_mxf32, rem_elem_bytes_max_4);
+            PDX_MAXNUM_MXF32_T(max_vec, max_vec, x0, bool_vec_max_4);
 
             PDX_RBMAXNUM_MXF32(a, max_elem, max_vec);
             max_vec = max_elem;
+
+            p_inp_out_itr += inner_count;
 
             valign align_z = PDX_Z_ALIGN();
 
@@ -240,7 +267,8 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                 EXPONENT(x0, out_val);
 
                 /* Accumulate the exp values */
-                PDX_ADD_MXF32_T(exp_sum_mxf32, exp_sum_mxf32, out_val, bool_vec);
+                PDX_ADD_MXF32_T(exp_sum_mxf32, exp_sum_mxf32, out_val,
+                        bool_vec);
 
                 /* Store the normalized data */
                 PDX_SAV_MXF32_XP(out_val, align_z, p_out_mxf32, rem_elem_bytes);
@@ -251,7 +279,7 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
             exp_sum = PDX_RADD_MXF32(exp_sum_mxf32);
 
             FLOAT32 inv_exp_sum;
-            PDX_DIV_F32_T(inv_exp_sum, 1, exp_sum, 1);
+            PDX_DIV_F32_T(inv_exp_sum, CONST_ONE, exp_sum, CONST_ONE);
             inv_exp_sum_mxf32 = inv_exp_sum;
 
             /* Align load priming of output */
@@ -295,29 +323,30 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
         const FLOAT32 *p_inp1 = p_inp;
         const FLOAT32 *p_out1 = p_out;
         /* number of remaining elements to be processed */
-        WORD32 rem_elem = (inner_stride & (PDX_M - 1));
+        WORD32 rem_elem = (inner_stride & (PDX_M - CONST_ONE));
         xb_vecMxf32 *restrict p_out_mxf32;
 
         for (i = 0; i < leading_dim; i++)
         {
             const FLOAT32 *p_inp2 = p_inp1;
             const FLOAT32 *p_out2 = p_out1;
-            for (j = 0; j < inner_stride - rem_elem; j += 4)
+            for (j = 0; j < inner_stride - rem_elem; j += CONST_FOUR)
             {
                 p_inp2 = p_inp1 + j;
                 p_out2 = p_out1 + j;
 
                 const FLOAT32 *p_inp3;
                 const xb_vecMxf32 *restrict p_in_mxf32 =
-                     (const xb_vecMxf32 *)(p_inp2);
+                        (const xb_vecMxf32*) (p_inp2);
                 const xb_vecMxf32 *restrict p_in_max_mxf32 =
-                    (const xb_vecMxf32 *)(p_inp2 + inner_stride);
+                        (const xb_vecMxf32*) (p_inp2 + inner_stride);
 
                 ax = PDX_LA_MXF32_PP(p_in_mxf32);
-                PDX_LA_MXF32_XP(max_vec, ax, p_in_mxf32, inner_stride_bytes * 2);
+                PDX_LA_MXF32_XP(max_vec, ax, p_in_mxf32,
+                        inner_stride_bytes * CONST_TWO);
 
                 /* inner_count -> group of elements on which softmax is computed */
-                for (k = 0; k < (inner_count - 1) >> 1; k++)
+                for (k = 0; k < (inner_count - CONST_ONE) >> CONST_ONE; k++)
                 {
                     /* Align load priming of input */
                     ax_inp = PDX_LA_MXF32_PP(p_in_max_mxf32);
@@ -325,15 +354,16 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
 
                     /* Load input elements with stride "inner_stride" */
                     PDX_LA_MXF32_XP(x1, ax_inp, p_in_max_mxf32,
-                                   inner_stride_bytes * 2);
-                    PDX_LA_MXF32_XP(x0, ax, p_in_mxf32, inner_stride_bytes * 2);
+                            inner_stride_bytes * CONST_TWO);
+                    PDX_LA_MXF32_XP(x0, ax, p_in_mxf32,
+                            inner_stride_bytes * CONST_TWO);
 
                     /* Calculate maximum across each lane of vector */
                     x0 = PDX_MAXNUM_MXF32(x0, x1);
                     max_vec = PDX_MAXNUM_MXF32(x0, max_vec);
                 }
 
-                WORD32 rem = ((inner_count - 1) & (1));
+                WORD32 rem = ((inner_count - CONST_ONE) & (CONST_ONE));
 
                 if (rem)
                 {
@@ -341,7 +371,8 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                     ax = PDX_LA_MXF32_PP(p_in_max_mxf32);
 
                     /* Load input elements with stride "inner_stride" */
-                    PDX_LA_MXF32_XP(x0, ax, p_in_max_mxf32, inner_stride_bytes * 2);
+                    PDX_LA_MXF32_XP(x0, ax, p_in_max_mxf32,
+                            inner_stride_bytes * CONST_TWO);
 
                     /* Calculate maximum across each lane of vector */
                     max_vec = PDX_MAXNUM_MXF32(x0, max_vec);
@@ -354,11 +385,11 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                 p_inp3 = p_inp2;
                 const FLOAT32 *p_out3 = p_out2;
 
-                p_in_mxf32 = (const xb_vecMxf32 *)(p_inp3);
+                p_in_mxf32 = (const xb_vecMxf32*) (p_inp3);
 
                 for (k = 0; k < inner_count; k++)
                 {
-                    p_out_mxf32 = (xb_vecMxf32 *)p_out3;
+                    p_out_mxf32 = (xb_vecMxf32*) p_out3;
                     /* Align load priming of input */
                     ax = PDX_LA_MXF32_PP(p_in_mxf32);
 
@@ -381,20 +412,23 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                 }
 
                 xb_vecMxf32 inv_exp_sum_mxf32;
-                inv_exp_sum_mxf32 = PDX_DIV_MXF32(1, exp_sum_mxf32);
+                inv_exp_sum_mxf32 = PDX_DIV_MXF32(CONST_ONE, exp_sum_mxf32);
 
                 /* Compute softmax */
                 align_z = PDX_Z_ALIGN();
-                const xb_vecMxf32 *restrict p_out_exp_mxf32 = (xb_vecMxf32 *)(p_out2);
+                const xb_vecMxf32 *restrict p_out_exp_mxf32 =
+                        (xb_vecMxf32*) (p_out2);
 
                 for (k = 0; k < inner_count; k++)
                 {
-                    xb_vecMxf32 *restrict p_out_softmax_mxf32 = (xb_vecMxf32 *)p_out2;
+                    xb_vecMxf32 *restrict p_out_softmax_mxf32 =
+                            (xb_vecMxf32*) p_out2;
                     /* Align load priming */
                     ax = PDX_LA_MXF32_PP(p_out_exp_mxf32);
 
                     /* Aligning load exp values of each element (4-way) */
-                    PDX_LA_MXF32_XP(x0, ax, p_out_exp_mxf32, inner_stride_bytes);
+                    PDX_LA_MXF32_XP(x0, ax, p_out_exp_mxf32,
+                            inner_stride_bytes);
 
                     /* Calculate the softmax */
                     x0 = PDX_MUL_MXF32(x0, inv_exp_sum_mxf32);
@@ -412,16 +446,17 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
             p_out2 = p_out1 + j;
 
             const FLOAT32 *p_inp3 = p_inp2;
-            const xb_vecMxf32 *restrict p_in_mxf32 = (const xb_vecMxf32 *)(p_inp3);
+            const xb_vecMxf32 *restrict p_in_mxf32 =
+                    (const xb_vecMxf32*) (p_inp3);
 
             ax = PDX_LA_MXF32_PP(p_in_mxf32);
             PDX_LAV_MXF32_XP(max_vec, ax, p_in_mxf32, rem_elem_bytes);
 
             /* Calculate maximum among group of elements on which softmax is computed */
-            for (k = 0; k < inner_count - 1; k++)
+            for (k = 0; k < inner_count - CONST_ONE; k++)
             {
                 p_inp3 += inner_stride;
-                p_in_mxf32 = (const xb_vecMxf32 *)(p_inp3);
+                p_in_mxf32 = (const xb_vecMxf32*) (p_inp3);
 
                 /* Align load priming of input */
                 ax = PDX_LA_MXF32_PP(p_in_mxf32);
@@ -444,8 +479,9 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
             for (k = 0; k < inner_count; k++)
             {
                 /* const Float32 *p_inp3 = p_inp2 + k*inner_stride; */
-                const xb_vecMxf32 *restrict p_in_mxf32 = (const xb_vecMxf32 *)(p_inp3);
-                xb_vecMxf32 *restrict p_out_mxf32 = (xb_vecMxf32 *)p_out3;
+                const xb_vecMxf32 *restrict p_in_mxf32 =
+                        (const xb_vecMxf32*) (p_inp3);
+                xb_vecMxf32 *restrict p_out_mxf32 = (xb_vecMxf32*) p_out3;
 
                 p_inp3 += inner_stride;
                 p_out3 += inner_stride;
@@ -471,7 +507,7 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
             }
 
             xb_vecMxf32 inv_exp_sum_mxf32;
-            inv_exp_sum_mxf32 = PDX_DIV_MXF32(1, exp_sum_mxf32);
+            inv_exp_sum_mxf32 = PDX_DIV_MXF32(CONST_ONE, exp_sum_mxf32);
 
             /* Compute softmax */
             p_inp3 = p_out2;
@@ -481,8 +517,10 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
             /* Calculate softmax of group of elements */
             for (k = 0; k < inner_count; k++)
             {
-                const xb_vecMxf32 *restrict p_out_exp_mxf32 = (const xb_vecMxf32 *)(p_inp3);
-                xb_vecMxf32 *restrict p_out_softmax_mxf32 = (xb_vecMxf32 *)p_out3;
+                const xb_vecMxf32 *restrict p_out_exp_mxf32 =
+                        (const xb_vecMxf32*) (p_inp3);
+                xb_vecMxf32 *restrict p_out_softmax_mxf32 =
+                        (xb_vecMxf32*) p_out3;
 
                 p_inp3 += inner_stride;
                 p_out3 = p_inp3;
@@ -496,7 +534,8 @@ WORD32 xa_nn_softmax_f32_f32(FLOAT32 *p_out,
                 x0 = PDX_MUL_MXF32(x0, inv_exp_sum_mxf32);
 
                 /* Store the softmax */
-                PDX_SAV_MXF32_XP(x0, align_z, p_out_softmax_mxf32, rem_elem_bytes);
+                PDX_SAV_MXF32_XP(x0, align_z, p_out_softmax_mxf32,
+                        rem_elem_bytes);
                 PDX_SAPOS_MXF32_FP(align_z, p_out_softmax_mxf32);
             }
 
