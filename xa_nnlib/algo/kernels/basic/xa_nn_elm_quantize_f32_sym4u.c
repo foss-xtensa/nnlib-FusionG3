@@ -55,8 +55,7 @@ WORD32 xa_nn_elm_quantize_f32_sym4u(UWORD8 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_COND((quant_min < UINT4_LOWER_LIMIT), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((quant_max > UINT4_UPPER_LIMIT), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((quant_max < quant_min), UNSUPPORTED_PARAM);
-    XA_NNLIB_ARG_CHK_COND(((num_inp_dims <= 0) || (num_inp_dims > MAX_DIMS)),
-            UNSUPPORTED_PARAM);
+    XA_NNLIB_ARG_CHK_COND((num_inp_dims <= 0), UNSUPPORTED_PARAM);
 
     WORD32 i;
 

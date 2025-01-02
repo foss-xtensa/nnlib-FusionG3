@@ -45,8 +45,7 @@ WORD32 xa_nn_elm_dequantize_sym4_f32(FLOAT32 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_ALIGN(p_inp_scale, sizeof(FLOAT32), UNSUPPORTED_PARAM);
 
     /* Basic Parameter checks */
-    XA_NNLIB_ARG_CHK_COND(((num_inp_dims <= 0) || (num_inp_dims > MAX_DIMS)),
-            UNSUPPORTED_PARAM);
+    XA_NNLIB_ARG_CHK_COND((num_inp_dims <= 0), UNSUPPORTED_PARAM);
 
     WORD32 i, axis_index;
     for (i = 0; i < num_inp_dims; i++)
