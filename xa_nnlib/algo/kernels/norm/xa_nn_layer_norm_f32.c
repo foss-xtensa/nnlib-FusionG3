@@ -32,7 +32,7 @@
  * std = sqrt(Variance + eps)
  * norm = (((x - Mean)/std) * weight) + bias
  *
- * */
+ */
 
 WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
                                        FLOAT32 *p_mean,
@@ -76,6 +76,11 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
     XA_NNLIB_ARG_CHK_COND((axis < 0), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((axis >= num_inp_dims), UNSUPPORTED_PARAM);
 
+    for (i = 0; i < num_inp_dims; i++)
+    {
+        XA_NNLIB_ARG_CHK_COND((p_inp_shape[i] < 0), UNSUPPORTED_PARAM);
+    }
+
     const xb_vecMxf32 *restrict p_in_mxf32 = (const xb_vecMxf32 *)p_inp;
     const xb_vecMxf32 *restrict p_in1_mxf32 = p_in_mxf32;
     xb_vecMxf32 *restrict p_out_mxf32 = (xb_vecMxf32 *)p_out;
@@ -89,13 +94,13 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
     WORD32 norm_dim = CONST_ONE;
 
     /* Calculate number of elements of leading dimensions */
-    for (int i = 0; i < axis; i++)
+    for (i = 0; i < axis; i++)
     {
         leading_dim *= p_inp_shape[i];
     }
 
     /* Calculate number of elements of the shape to be normalized */
-    for (int i = axis; i < num_inp_dims; i++)
+    for (i = axis; i < num_inp_dims; i++)
     {
         norm_dim *= p_inp_shape[i];
     }
@@ -188,7 +193,7 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
     xb_vecMxf32 *restrict p_out_mxf32_dim2;
     xb_vecMxf32 *restrict p_out_mxf32_dim3;
 
-    WORD32 offset_dim = 4 * norm_dim;
+    WORD32 offset_dim = CONST_FOUR * norm_dim;
 
     valign ax_st1, ax_st2, ax_st3;
     const FLOAT32 *p_inp1, *p_inp2, *p_inp3, *p_inp4;
@@ -273,10 +278,10 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
 #pragma no_reorder
         for (j = 0; j < (norm_dim); j++)
         {
-            xtfloat_loadip(a0, p_a0, 4);
-            xtfloat_loadip(a1, p_a1, 4);
-            xtfloat_loadip(a2, p_a2, 4);
-            xtfloat_loadip(a3, p_a3, 4);
+            xtfloat_loadip(a0, p_a0, CONST_FOUR);
+            xtfloat_loadip(a1, p_a1, CONST_FOUR);
+            xtfloat_loadip(a2, p_a2, CONST_FOUR);
+            xtfloat_loadip(a3, p_a3, CONST_FOUR);
 
             sum = sum + a0;
             sq_sum = sq_sum + XT_MUL_S(a0, a0);
@@ -357,10 +362,10 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
         xtfloat mean3;
         xtfloat mean4;
 
-        PDX_DIV_F32_T(mean1,sum,norm_dim,1);
-        PDX_DIV_F32_T(mean2,sum1,norm_dim,1);
-        PDX_DIV_F32_T(mean3,sum2,norm_dim,1);
-        PDX_DIV_F32_T(mean4,sum3,norm_dim,1);
+        PDX_DIV_F32_T(mean1, sum,norm_dim,  CONST_ONE);
+        PDX_DIV_F32_T(mean2, sum1,norm_dim, CONST_ONE);
+        PDX_DIV_F32_T(mean3, sum2,norm_dim, CONST_ONE);
+        PDX_DIV_F32_T(mean4, sum3,norm_dim, CONST_ONE);
 
         sum_mxf32 = mean1;
         sum_mxf32_1 = mean2;
@@ -375,22 +380,22 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
 
         /* Calculate variance */
         xtfloat variance ;
-        PDX_DIV_F32_T(variance,sq_sum,norm_dim,1);
+        PDX_DIV_F32_T(variance, sq_sum, norm_dim, CONST_ONE);
         variance -= mean1 * mean1;
         variance = variance + eps;
         xtfloat std1 = variance;
 
-        PDX_DIV_F32_T(variance,sq_sum1,norm_dim,1);
+        PDX_DIV_F32_T(variance, sq_sum1, norm_dim, CONST_ONE);
         variance -= mean2 * mean2;
         variance = variance + eps;
         xtfloat std2 = variance;
 
-        PDX_DIV_F32_T(variance,sq_sum2,norm_dim,1);
+        PDX_DIV_F32_T(variance, sq_sum2, norm_dim, CONST_ONE);
         variance -= mean3 * mean3;
         variance = variance + eps;
         xtfloat std3 = variance;
 
-        PDX_DIV_F32_T(variance,sq_sum3,norm_dim,1);
+        PDX_DIV_F32_T(variance, sq_sum3, norm_dim, CONST_ONE);
         variance -= mean4 * mean4;
         variance = variance + eps;
         xtfloat std4 = variance;
@@ -669,7 +674,7 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
         PDX_SAPOS_MXF32_FP(a_out_dim3, p_out_mxf32_dim3);
     }
 
-    i = i*4;
+    i = i * CONST_FOUR;
 
     p_in_mxf32 = (const xb_vecMxf32 *)p_inp1;
     p_in1_mxf32 = (const xb_vecMxf32 *)p_inp1;
@@ -701,7 +706,7 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
         /* Loop runs for norm_dim iterations */
         for (j = 0; j < (norm_dim); j++)
         {
-            xtfloat_loadip(a0, p_a0, 4);
+            xtfloat_loadip(a0, p_a0, CONST_FOUR);
             sum = sum + a0;
             sq_sum = sq_sum + XT_MUL_S(a0, a0);
         }
@@ -752,7 +757,7 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
         std_vec = PDX_SQRT_MXF32(std_vec);
 
         /* Calculate inverse std */
-        rstd_vec = PDX_DIV_MXF32(1, std_vec);
+        rstd_vec = PDX_DIV_MXF32(CONST_ONE, std_vec);
 
         /* Store inverse std output for each normalized shape */
         PDX_SAV_MXF32_XP(rstd_vec, a_rstd, p_rstd_mxf32, SIZE_OF_FLOAT);

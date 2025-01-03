@@ -68,16 +68,24 @@ BASICOBJS =                          \
   xa_nn_elm_quantize_f32_sym4u.o     \
   xa_nn_elm_quantize_f32_sym8.o      \
   xa_nn_elm_quantize_f32_sym8u.o     \
+  xa_nn_mean_f32.o               \
+  xa_nn_elm_sub_f32.o                \
+  xa_nn_elm_sub_32x32.o           \
+  xa_nn_elm_exp_f32.o            \
+  xa_nn_elm_div_f32.o        \
+  xa_nn_elm_div_32x32.o           \
      
 
 NORMOBJS = \
-  xa_nn_layer_norm.o 
+  xa_nn_layer_norm_f32.o 
 
 REORGOBJS = \
-  xa_nn_cat.o 
+  xa_nn_cat.o \
+  xa_nn_permute.o \
+  xa_nn_slice.o
 
 ACTIVATIONSOBJS = \
-  xa_nn_softmax.o 
+  xa_nn_softmax_f32.o 
 
 TABLESOBJS = \
   expf_tbl.o 

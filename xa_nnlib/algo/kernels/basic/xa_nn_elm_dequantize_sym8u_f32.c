@@ -24,6 +24,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
+#include <math.h>
 
 WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
         const UWORD8 *__restrict__ p_inp,
@@ -45,8 +46,13 @@ WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_ALIGN(p_inp_scale, sizeof(FLOAT32), UNSUPPORTED_PARAM);
 
     /* Basic Parameter checks */
-    XA_NNLIB_ARG_CHK_COND(((num_inp_dims <= 0) || (num_inp_dims > MAX_DIMS)),
-            UNSUPPORTED_PARAM);
+    XA_NNLIB_ARG_CHK_COND((num_inp_dims <= 0), UNSUPPORTED_PARAM);
+
+    WORD32 i, axis_index;
+    for (i = 0; i < num_inp_dims; i++)
+    {
+        XA_NNLIB_ARG_CHK_COND((p_inp_shape[i] <= 0), UNSUPPORTED_PARAM);
+    }
 
     /* Number of elements to be processed with a stride of 1 */
     WORD32 num_elm = CONST_ONE;
@@ -59,7 +65,9 @@ WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
 
     if (p_axis == NULL)
     {
-        for (WORD32 i = 0; i < num_inp_dims; i++)
+        XA_NNLIB_ARG_CHK_COND(((isnan(*p_inp_scale)) || (isinf(*p_inp_scale))),
+                UNSUPPORTED_PARAM);
+        for (i = 0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
         }
@@ -71,17 +79,23 @@ WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
         /* Invalid input checks
          * axis should be in the range [0,num_inp_dims-1]
          */
+        for (i = 0; i < p_inp_shape[*p_axis]; i++)
+        {
+            XA_NNLIB_ARG_CHK_COND(
+                    ((isnan(p_inp_scale[i])) || (isinf(p_inp_scale[i]))),
+                    UNSUPPORTED_PARAM);
+        }
         XA_NNLIB_ARG_CHK_COND(((axis < 0) || (axis >= num_inp_dims)),
                 UNSUPPORTED_PARAM);
 
         /* Calculating leading dims */
-        for (WORD32 i = 0; i < axis; i++)
+        for (i = 0; i < axis; i++)
         {
             leading_dims *= p_inp_shape[i];
         }
 
         /* Calculating trailing dims */
-        for (WORD32 i = axis + CONST_ONE; i < num_inp_dims; i++)
+        for (i = axis + CONST_ONE; i < num_inp_dims; i++)
         {
             trailing_dims *= p_inp_shape[i];
         }
@@ -103,22 +117,31 @@ WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
     FLOAT32 *__restrict__ out_base;
 
     /* Vector pointers for the base pointers */
-    const xb_vecMxu8 *__restrict__ inp_base_p;
-    xb_vecMxf32 *__restrict__ out_base_p;
+    const xb_vecMxu8 *__restrict__ inp_base_p1;
+    xb_vecMxf32 *__restrict__ out_base_p1;
+
+    const xb_vecMxu8 *__restrict__ inp_base_p2;
+    xb_vecMxf32 *__restrict__ out_base_p2;
 
     WORD32 m = (num_elm & (PDX_M - CONST_ONE));
     WORD32 m_8 = m * SIZE_OF_INT8;
     WORD32 m_32 = m * SIZE_OF_FLOAT;
 
     WORD32 leading_dim_idx;
-    valign align_a, align_out;
-    align_out = PDX_Z_ALIGN();
+
+    valign align_a1, align_out1;
+    align_out1 = PDX_Z_ALIGN();
+
+    valign align_a2, align_out2;
+    align_out2 = PDX_Z_ALIGN();
 
     xb_vecMxu32 x0;
     xb_vecMxf32 y0;
 
+    WORD32 two_times_lps = CONST_TWO * length_per_step;
+
     /* Outermost loop iterates over the channels */
-    for (WORD32 axis_index = 0; axis_index < axis_count; axis_index++)
+    for (axis_index = 0; axis_index < axis_count; axis_index++)
     {
         xb_vecMxf32 d_inp_scale = p_inp_scale[axis_index];
         inp_base = p_inp + (axis_index * trailing_dims);
@@ -128,28 +151,58 @@ WORD32 xa_nn_elm_dequantize_sym8u_f32(FLOAT32 *__restrict__ p_out,
          * All the elements are quantized at a time for
          * single scale and zero_bias once loaded
          */
-        for (leading_dim_idx = 0; leading_dim_idx < leading_dims;
-                leading_dim_idx++)
+        for (leading_dim_idx = 0; leading_dim_idx < leading_dims - CONST_ONE;
+                leading_dim_idx += CONST_TWO)
         {
-            inp_base_p = (const xb_vecMxu8*) inp_base;
-            align_a = PDX_LA_MXU8_PP(inp_base_p);
-            out_base_p = (xb_vecMxf32*) out_base;
+            inp_base_p1 = (const xb_vecMxu8*) inp_base;
+            align_a1 = PDX_LA_MXU8_PP(inp_base_p1);
+            out_base_p1 = (xb_vecMxf32*) out_base;
+
+            inp_base_p2 = (const xb_vecMxu8*)(inp_base + length_per_step);
+            align_a2 = PDX_LA_MXU8_PP(inp_base_p2);
+            out_base_p2 = (xb_vecMxf32*)(out_base + length_per_step);
 
             /* Unroll the loop by x4 for SIMD */
-            for (WORD32 i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+            for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
             {
-                PDX_LAU32_MX8_IP(x0, align_a, inp_base_p);
+                PDX_LAU32_MX8_IP(x0, align_a1, inp_base_p1);
                 y0 = PDX_MUL_MXF32(x0, d_inp_scale);
-                PDX_SA_MXF32_IP(y0, align_out, out_base_p);
+                PDX_SA_MXF32_IP(y0, align_out1, out_base_p1);
+
+                PDX_LAU32_MX8_IP(x0, align_a2, inp_base_p2);
+                y0 = PDX_MUL_MXF32(x0, d_inp_scale);
+                PDX_SA_MXF32_IP(y0, align_out2, out_base_p2);
             }
             /* Remaining iterations */
-            PDX_LAVU32_MX8_XP(x0, align_a, inp_base_p, m_8);
+            PDX_LAVU32_MX8_XP(x0, align_a1, inp_base_p1, m_8);
             y0 = PDX_MUL_MXF32(x0, d_inp_scale);
-            PDX_SAV_MXF32_XP(y0, align_out, out_base_p, m_32);
-            PDX_SAPOS_MXF32_FP(align_out, out_base_p);
+            PDX_SAV_MXF32_XP(y0, align_out1, out_base_p1, m_32);
+            PDX_SAPOS_MXF32_FP(align_out1, out_base_p1);
 
-            inp_base = inp_base + length_per_step;
-            out_base = out_base + length_per_step;
+            PDX_LAVU32_MX8_XP(x0, align_a2, inp_base_p2, m_8);
+            y0 = PDX_MUL_MXF32(x0, d_inp_scale);
+            PDX_SAV_MXF32_XP(y0, align_out2, out_base_p2, m_32);
+            PDX_SAPOS_MXF32_FP(align_out2, out_base_p2);
+
+            inp_base = inp_base + two_times_lps;
+            out_base = out_base + two_times_lps;
+        }
+        if ((leading_dims % CONST_TWO) != 0)
+        {
+            inp_base_p1 = (const xb_vecMxu8*) inp_base;
+            align_a1 = PDX_LA_MXU8_PP(inp_base_p1);
+            out_base_p1 = (xb_vecMxf32*) out_base;
+
+            for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+            {
+                PDX_LAU32_MX8_IP(x0, align_a1, inp_base_p1);
+                y0 = PDX_MUL_MXF32(x0, d_inp_scale);
+                PDX_SA_MXF32_IP(y0, align_out1, out_base_p1);
+            }
+            PDX_LAVU32_MX8_XP(x0, align_a1, inp_base_p1, m_8);
+            y0 = PDX_MUL_MXF32(x0, d_inp_scale);
+            PDX_SAV_MXF32_XP(y0, align_out1, out_base_p1, m_32);
+            PDX_SAPOS_MXF32_FP(align_out1, out_base_p1);
         }
     }
 

@@ -28,7 +28,7 @@
 /*****************************************************************************/
 /* API version */
 #define XA_APIVERSION_MAJOR 1
-#define XA_APIVERSION_MINOR 0
+#define XA_APIVERSION_MINOR 1
 
 /* last compatible version */
 /* sometimes a new API version is just for a bugfix, or a added feature  in */

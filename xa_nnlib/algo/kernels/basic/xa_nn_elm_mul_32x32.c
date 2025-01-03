@@ -56,7 +56,7 @@ WORD32 xa_nn_elm_mul_scalar_32x32_32(WORD32 *__restrict__ p_out,
     /* Initialization of valign registers */
     ax = PDX_LA_MX32_PP(p_x);
     az = PDX_Z_ALIGN();
-
+    m = (num_elm & (PDX_M - CONST_ONE)) * sizeof(*p_inp1);
     /* Vectorize the inp2 for SIMD operation */
     y0 = inp2;
 
@@ -68,7 +68,6 @@ WORD32 xa_nn_elm_mul_scalar_32x32_32(WORD32 *__restrict__ p_out,
         PDX_SA_MX32_IP(z0, az, p_z);
     }
     /* Remaining iterations */
-    m = (num_elm & (PDX_M - CONST_ONE)) * sizeof(*p_inp1);
     PDX_LAV_MX32_XP(x0, ax, p_x, m);
     z0 = PDX_MUL_MX32(x0, y0);
     PDX_SAV_MX32_XP(z0, az, p_z, m);
@@ -136,15 +135,16 @@ WORD32 xa_nn_elm_mul_32x32_32(
 } /* xa_nn_elm_mul_32x32_32() */
 
 static inline void shapes_convert_5D(WORD32 *const __restrict__ p_5d_out_shape,
-        WORD32 *const __restrict__ p_5d_inp1_shape,  // new input1 shapes
-        WORD32 *const __restrict__ p_5d_inp2_shape,  // new input2 shapes
+        WORD32 *const __restrict__ p_5d_inp1_shape,  /* new input1 shapes */
+        WORD32 *const __restrict__ p_5d_inp2_shape,  /* new input2 shapes */
         const WORD32 *const __restrict__ p_out_shape,
-        const WORD32 *const __restrict__ p_inp1_shape,  // original input1 shapes
-        const WORD32 *const __restrict__ p_inp2_shape,  // original input1 shapes
+        const WORD32 *const __restrict__ p_inp1_shape,  /* original input1 shapes */
+        const WORD32 *const __restrict__ p_inp2_shape,  /* original input1 shapes */
         const WORD32 num_inp_dims)
 {
+    WORD32 i;
     /* convert number of dimension less than 5D to 5D */
-    for (WORD32 i = 0; i < num_inp_dims; i++)
+    for (i = 0; i < num_inp_dims; i++)
     {
         p_5d_out_shape[i + MAX_DIMS - num_inp_dims] = p_out_shape[i];
         p_5d_inp1_shape[i + MAX_DIMS - num_inp_dims] = p_inp1_shape[i];
@@ -156,8 +156,9 @@ static inline WORD32 check_shapes(const WORD32 *const p_inp1_shape,
         const WORD32 *const p_inp2_shape,
         const WORD32 *const p_out_shape)
 {
+    WORD32 i;
     /* Check the shapes of input and output */
-    for (WORD32 i = 0; i < MAX_DIMS; i++)
+    for (i = 0; i < MAX_DIMS; i++)
     {
         if (((p_inp1_shape[i] != p_inp2_shape[i])
                 && (p_inp1_shape[i] != CONST_ONE)
@@ -177,11 +178,12 @@ static inline void strides_calculation(const WORD32 *const inp1_shape,
         WORD32 *const inp1_strides,
         WORD32 *const inp2_strides)
 {
+    WORD32 i;
     inp1_strides[MAX_DIMS - CONST_ONE] = CONST_ONE;
     inp2_strides[MAX_DIMS - CONST_ONE] = CONST_ONE;
 
     /* Calculation of strides */
-    for (WORD32 i = MAX_DIMS -  CONST_TWO; i >= 0; i--)
+    for (i = MAX_DIMS -  CONST_TWO; i >= 0; i--)
     {
         inp1_strides[i] = inp1_strides[i + CONST_ONE]
                 * inp1_shape[i + CONST_ONE];
@@ -199,7 +201,7 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
         const WORD32 *input1_shapes,
         const WORD32 *input2_shapes)
 {
-    WORD32 n, m;
+    WORD32 n, m, i;
 
     /* Declaration of SIMD variables */
     xb_vecMx32 x0, y0, y1, z0, z1;
@@ -210,18 +212,18 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
     /* Declaration of valign registers */
     valign ax, ay0, ay1, az0, az1;
 
-    WORD32 *pz_baseptr = &p_out[0];
+    WORD32 *p_z_baseptr = &p_out[0];
     /* base address calculation for output */
-    xb_vecMx32 *__restrict__ p_z0 = (xb_vecMx32 *)&pz_baseptr[0];
+    xb_vecMx32 *__restrict__ p_z0 = (xb_vecMx32 *)&p_z_baseptr[0];
     /* Middle address calculation for output */
-    xb_vecMx32 *__restrict__ p_z1 = (xb_vecMx32 *)(&pz_baseptr[0] +
+    xb_vecMx32 *__restrict__ p_z1 = (xb_vecMx32 *)(&p_z_baseptr[0] +
                                          ((out_lc / CONST_TWO) * in_lc));
 
     /* priming */
     az0 = PDX_Z_ALIGN();
     az1 = PDX_Z_ALIGN();
 
-    const WORD32 *px_baseptr;
+    const WORD32 *p_x_baseptr;
     xb_vecMx32 *p_inp;
 
     /* pointer for base address for input1 */
@@ -233,11 +235,11 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
     {
         p_x = (const xb_vecMx32 *)p_inp1;
         p_inp = (xb_vecMx32 *)p_inp1;
-        px_baseptr = p_inp2;
+        p_x_baseptr = p_inp2;
         /* base address calculation for input1 */
-        p_y0 = (const xb_vecMx32 *)&px_baseptr[0];
+        p_y0 = (const xb_vecMx32 *)&p_x_baseptr[0];
         /* Middle address calculation for input1*/
-        p_y1 = (const xb_vecMx32 *)(&px_baseptr[0] +
+        p_y1 = (const xb_vecMx32 *)(&p_x_baseptr[0] +
                 ((out_lc / CONST_TWO) * in_lc));
         
     }
@@ -245,11 +247,11 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
     {
         p_x = (const xb_vecMx32 *)p_inp2;
         p_inp = (xb_vecMx32 *) p_inp2;
-        px_baseptr = p_inp1;
+        p_x_baseptr = p_inp1;
         /* base address calculation for input2 */
-        p_y0 = (const xb_vecMx32 *)&px_baseptr[0];
+        p_y0 = (const xb_vecMx32 *)&p_x_baseptr[0];
         /* Middle address calculation for input2 */
-        p_y1 = (const xb_vecMx32 *)(&px_baseptr[0] +
+        p_y1 = (const xb_vecMx32 *)(&p_x_baseptr[0] +
                 ((out_lc / CONST_TWO) * in_lc));
     }
     /* priming */
@@ -257,8 +259,10 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
     ay0 = PDX_LA_MX32_PP(p_y0);
     ay1 = PDX_LA_MX32_PP(p_y1);
 
+    m = (in_lc & (PDX_M - CONST_ONE)) * sizeof(*p_inp1);
+
     /* Unroll the loop by x2 for SIMD */
-    for (WORD32 i = 0; i < out_lc - CONST_ONE; i += CONST_TWO)
+    for (i = 0; i < out_lc - CONST_ONE; i += CONST_TWO)
     {
         /* unroll the loop by x4 for SIMD */
         for (n = 0; n < (in_lc >> LOG2_PDX_M); n++)
@@ -281,7 +285,6 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
             PDX_SA_MX32_IP(z1, az1, p_z1);
         }
         /* Remaining iterations of inner loop */
-        m = (in_lc & (PDX_M - CONST_ONE)) * sizeof(*p_inp1);
         PDX_LAV_MX32_XP(x0, ax, p_x, m);
         PDX_LAV_MX32_XP(y0, ay0, p_y0, m);
         PDX_LAV_MX32_XP(y1, ay1, p_y1, m);
@@ -308,7 +311,6 @@ static inline void internal_elm_mul_broadcast_2D_32x32_32(
             PDX_SA_MX32_IP(z0, az1, p_z1);
         }
         /* Remaining iterations */
-        m = (in_lc & (PDX_M - CONST_ONE)) * sizeof(*p_inp1);
         PDX_LAV_MX32_XP(y1, ay1, p_y1, m);
         PDX_LAV_MX32_XP(x0, ax, p_x, m);
         z0 = PDX_MUL_MX32(x0, y1);
@@ -357,7 +359,7 @@ static inline void internal_elm_mul_broadcast_1D_scalar_32x32_32(
 
     /* vectorize the elm for SIMD */
     y0 = elm;
-
+    m = (num_elm & (PDX_M - CONST_ONE)) * sizeof(*p_elm);
     /* unroll the loop by x4 for SIMD */
     for (n = 0; n < (num_elm >> LOG2_PDX_M); n++)
     {
@@ -366,7 +368,6 @@ static inline void internal_elm_mul_broadcast_1D_scalar_32x32_32(
         PDX_SA_MX32_IP(z0, az, p_z);
     }
     /* Remaining iterations */
-    m = (num_elm & (PDX_M - CONST_ONE)) * sizeof(*p_elm);
     PDX_LAV_MX32_XP(x0, ax, p_x, m);
     z0 = PDX_MUL_MX32(x0, y0);
     PDX_SAV_MX32_XP(z0, az, p_z, m);
@@ -401,6 +402,14 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_COND(((num_inp_dims <= 0) ||
                  (num_inp_dims > MAX_DIMS)), UNSUPPORTED_PARAM);
 
+    WORD32 i;
+    for (i = 0; i < num_inp_dims; i++)
+    {
+        XA_NNLIB_ARG_CHK_COND((p_out_shape[i] <= 0), UNSUPPORTED_PARAM);
+        XA_NNLIB_ARG_CHK_COND((p_inp1_shape[i] <= 0), UNSUPPORTED_PARAM);
+        XA_NNLIB_ARG_CHK_COND((p_inp2_shape[i] <= 0), UNSUPPORTED_PARAM);
+    }
+
     /* 5D shapes initialization */
     WORD32 p_5d_out_shape[MAX_DIMS] = {CONST_ONE, CONST_ONE, CONST_ONE, CONST_ONE, CONST_ONE};
     WORD32 p_5d_inp1_shape[MAX_DIMS] = {CONST_ONE, CONST_ONE, CONST_ONE, CONST_ONE, CONST_ONE};
@@ -425,7 +434,7 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
     /* check for broadcast need */
     WORD32 need_broadcast = 0;
     WORD32 inp1_const = CONST_ONE, inp2_const = CONST_ONE;
-    for (int i = 0; i < MAX_DIMS; i++)
+    for (i = 0; i < MAX_DIMS; i++)
     {
         if (p_5d_inp1_shape[i] != p_5d_inp2_shape[i])
         {
@@ -449,6 +458,7 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
     const WORD32 *__restrict__ p_inp1_base = p_inp1;
     const WORD32 *__restrict__ p_inp2_base = p_inp2;
     WORD32 *p_out_base = p_out;
+    WORD32 itr0, itr1, itr2, itr3;
 
     /* if broadcast is not needed */
     if (need_broadcast == 0)
@@ -496,15 +506,15 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
             /* Repeat the 4th dim as the 3rd dim needs to be broadcasted */
             in_lc = p_5d_out_shape[4];
             out_lc = p_5d_out_shape[3];
-            for (WORD32 itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
+            for (itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
             {
                 const WORD32 *__restrict__ p_inp1_itr0 = p_inp1_base;
                 const WORD32 *__restrict__ p_inp2_itr0 = p_inp2_base;
-                for (WORD32 itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
+                for (itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
                 {
                     const WORD32 *__restrict__ p_inp1_itr1 = p_inp1_itr0;
                     const WORD32 *__restrict__ p_inp2_itr1 = p_inp2_itr0;
-                    for (WORD32 itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
+                    for (itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
                     {
                         internal_elm_mul_broadcast_2D_32x32_32(
                             p_out_base,
@@ -531,15 +541,15 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
              * dimension broadcasting (0th, 1st, 2nd) will be taken care
              * while calculating the input addresses */
             in_lc = p_5d_out_shape[3] * p_5d_out_shape[4];
-            for (WORD32 itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
+            for (itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
             {
                 const WORD32 *__restrict__ p_inp1_itr0 = p_inp1_base;
                 const WORD32 *__restrict__ p_inp2_itr0 = p_inp2_base;
-                for (WORD32 itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
+                for (itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
                 {
                     const WORD32 *__restrict__ p_inp1_itr1 = p_inp1_itr0;
                     const WORD32 *__restrict__ p_inp2_itr1 = p_inp2_itr0;
-                    for (WORD32 itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
+                    for (itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
                     {
                         xa_nn_elm_mul_32x32_32(
                             p_out_base,
@@ -561,19 +571,19 @@ WORD32 xa_nn_elm_mul_broadcast_5D_32x32_32(WORD32 *__restrict__ p_out,
     else
     {
         /* if the last dim itself is broadcastable */
-        for (WORD32 itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
+        for (itr0 = 0; itr0 < p_5d_out_shape[0]; itr0++)
         {
             const WORD32 *__restrict__ p_inp1_itr0 = p_inp1_base;
             const WORD32 *__restrict__ p_inp2_itr0 = p_inp2_base;
-            for (WORD32 itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
+            for (itr1 = 0; itr1 < p_5d_out_shape[1]; itr1++)
             {
                 const WORD32 *__restrict__ p_inp1_itr1 = p_inp1_itr0;
                 const WORD32 *__restrict__ p_inp2_itr1 = p_inp2_itr0;
-                for (WORD32 itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
+                for (itr2 = 0; itr2 < p_5d_out_shape[2]; itr2++)
                 {
                     const WORD32 *__restrict__ p_inp1_itr2 = p_inp1_itr1;
                     const WORD32 *__restrict__ p_inp2_itr2 = p_inp2_itr1;
-                    for (WORD32 itr3 = 0; itr3 < p_5d_out_shape[3]; itr3++)
+                    for (itr3 = 0; itr3 < p_5d_out_shape[3]; itr3++)
                     {
                         internal_elm_mul_broadcast_1D_scalar_32x32_32(
                             p_out_base,

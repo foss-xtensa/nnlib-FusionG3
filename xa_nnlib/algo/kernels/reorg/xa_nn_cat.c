@@ -41,7 +41,9 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_ALIGN(p_out, elm_size, UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_ALIGN(p_out_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
 
-    for (int i = 0; i < num_inp; i++)
+    WORD32 i;
+
+    for (i = 0; i < num_inp; i++)
     {
         XA_NNLIB_ARG_CHK_PTR(pp_inps[i], UNSUPPORTED_PARAM);
         XA_NNLIB_ARG_CHK_ALIGN(pp_inps[i], elm_size, UNSUPPORTED_PARAM);
@@ -57,17 +59,43 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_COND((num_inp <= 0), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_COND((elm_size <= 0) || (elm_size == CONST_THREE)
              || (elm_size > CONST_FOUR), UNSUPPORTED_PARAM);
+    for (i = 0; i < num_inp_dims; i++)
+    {
+        XA_NNLIB_ARG_CHK_COND((p_out_shape[i] <= 0), UNSUPPORTED_PARAM);
+    }
+
+    /* Check for all dimensions are same except along dimensions along axis */
+    /* Check input shapes are non-negative*/
+    WORD32 d;
+    for (d = 0; d < num_inp_dims; d++)
+    {
+        if (d != axis)
+        {
+            for (i = 0; i < num_inp; i++)
+            {
+                XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] <= 0), UNSUPPORTED_PARAM);
+                XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] != pp_inps_shape[0][d]), UNSUPPORTED_PARAM);
+            }
+        }
+        else
+        {
+            for (i = 0; i < num_inp; i++)
+            {
+               XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] <= 0), UNSUPPORTED_PARAM);
+            }
+        }
+    }
 
     /* Calculate outer_size and inner_size based on axis */
     WORD32 outer_size = CONST_ONE;
     WORD32 inner_size = CONST_ONE;
 
-    for (WORD32 i = 0; i < axis; i++)
+    for (i = 0; i < axis; i++)
     {
         outer_size *= p_out_shape[i];
     }
 
-    for (WORD32 i = axis + 1; i < num_inp_dims; i++)
+    for (i = axis + CONST_ONE; i < num_inp_dims; i++)
     {
         inner_size *= p_out_shape[i];
     }
@@ -78,7 +106,7 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
     WORD32 inner_size_bytes = inner_size * elm_size;
 
     /* Loop over each input tensor */
-    for (int i = 0; i < num_inp; i++)
+    for (i = 0; i < num_inp; i++)
     {
         /*
          * Calculate the number of elements to copy based
@@ -101,7 +129,8 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
         xb_vec4Mx8 *out_ptr = (xb_vec4Mx8*) p_o;
 
         /* Loop over each slice in the outer dimension */
-        for (WORD32 k = 0; k < outer_size; k++)
+        WORD32 k;
+        for (k = 0; k < outer_size; k++)
         {
             p_o = ptmp_out + k * p_out_shape[axis] * inner_size_bytes;
             valign align_out = PDX_Z_ALIGN();
@@ -109,7 +138,8 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
             xb_vec4Mx8 x0;
 
             /* Process full vector chunks */
-            for (WORD32 m = 0; m < t_full_chunks; m++)
+            WORD32 m;
+            for (m = 0; m < t_full_chunks; m++)
             {
                 PDX_LA_4MX8_IP(x0, align_in, in_ptr);
                 PDX_SA_4MX8_IP(x0, align_out, out_ptr);

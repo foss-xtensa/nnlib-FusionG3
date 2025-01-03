@@ -29,10 +29,10 @@
 /* Identification Strings */
 
 #define LIBNAME "FusionG3 Neural Network Library"
-#define LIBVERSION "1.0.0"
+#define LIBVERSION "1.1.0"
 
 #define LIB_APIVERSION_MAJOR 1
-#define LIB_APIVERSION_MINOR 0
+#define LIB_APIVERSION_MINOR 1
 
 #if LIB_APIVERSION_MAJOR != XA_APIVERSION_MAJOR || \
 LIB_APIVERSION_MINOR != XA_APIVERSION_MINOR

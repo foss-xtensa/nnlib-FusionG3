@@ -106,7 +106,7 @@
 #define UINT4_LOWER_LIMIT            0
 #define UINT4_UPPER_LIMIT            15
 
-#define F32_MIN_VALUE                (FLOAT32)-3.4028235e38 
+#define F32_MIN_VALUE                (FLOAT32)-3.4028235e38
 
 #define SHIFT_FACTOR_4_BIT           4
 #define SCALE_FACTOR_4_BIT           16
