@@ -163,11 +163,11 @@ WORD32 xa_nn_elm_dequantize_asym16u_f32(FLOAT32 *__restrict__ p_out,
         {
             inp_base_p1 = (const xb_vecMxu16*) inp_base;
             align_a1 = PDX_LA_MXU16_PP(inp_base_p1);
-            out_base_p1 = (xb_vecMxf32*) (out_base + length_per_step);
+            out_base_p1 = (xb_vecMxf32*) out_base;
 
             inp_base_p2 = (const xb_vecMxu16*) (inp_base + length_per_step);
             align_a2 = PDX_LA_MXU16_PP(inp_base_p2);
-            out_base_p2 = (xb_vecMxf32*) out_base;
+            out_base_p2 = (xb_vecMxf32*) (out_base + length_per_step);
 
             for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
             {
