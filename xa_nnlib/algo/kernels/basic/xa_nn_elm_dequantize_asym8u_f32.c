@@ -190,7 +190,7 @@ WORD32 xa_nn_elm_dequantize_asym8u_f32(FLOAT32 *__restrict__ p_out,
             PDX_SAV_MXF32_XP(y0, align_out1, out_base_p1, m_32);
             PDX_SAPOS_MXF32_FP(align_out1, out_base_p1);
 
-            PDX_LAVU32_MX8_XP(x0, align_a2, inp_base_p1, m_8);
+            PDX_LAVU32_MX8_XP(x0, align_a2, inp_base_p2, m_8);
             b0 = PDX_SUB_MX32(x0, d_inp_zero_bias);
             y0 = PDX_MUL_MXF32(b0, d_inp_scale);
             PDX_SAV_MXF32_XP(y0, align_out2, out_base_p2, m_32);
