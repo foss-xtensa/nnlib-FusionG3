@@ -58,10 +58,33 @@ EXTERN(xa_nn_elm_div_scalar_32x32_f32)
 EXTERN(xa_nn_elm_div_broadcast_5D_32x32_32)
 EXTERN(xa_nn_elm_div_broadcast_5D_32x32_f32)
 EXTERN(xa_nn_mean_f32_f32)
+EXTERN(xa_nn_elm_clamp_16_16)
+EXTERN(xa_nn_elm_clamp_scalar_16_16)
+EXTERN(xa_nn_elm_clamp_broadcast_5D_16_16)
+EXTERN(xa_nn_elm_clamp_8_8)
+EXTERN(xa_nn_elm_clamp_scalar_8_8)
+EXTERN(xa_nn_elm_clamp_broadcast_5D_8_8)
+EXTERN(xa_nn_elm_clamp_8u_8u)
+EXTERN(xa_nn_elm_clamp_scalar_8u_8u)
+EXTERN(xa_nn_elm_clamp_broadcast_5D_8u_8u)
+EXTERN(xa_nn_elm_clamp_f32_f32)
+EXTERN(xa_nn_elm_clamp_scalar_f32_f32)
+EXTERN(xa_nn_elm_clamp_broadcast_5D_f32_f32)
+EXTERN(xa_nn_elm_rsqrt_f32_f32)
+EXTERN(xa_nn_elm_sqrt_f32_f32)
+EXTERN(xa_nn_elm_less_f32xf32_bool)
+EXTERN(xa_nn_elm_less_scalar_f32xf32_bool)
+EXTERN(xa_nn_elm_less_broadcast_5D_f32xf32_bool)
+EXTERN(xa_nn_elm_where_f32xf32_f32)
+EXTERN(xa_nn_elm_where_broadcast_5D_f32xf32_f32)
+
 
 /* Normalization kernels */
 EXTERN(xa_nn_native_layer_norm_f32_f32)
 
 /* Activation kernels */
 EXTERN(xa_nn_softmax_f32_f32)
+EXTERN(xa_nn_sigmoid_f32_f32)
+EXTERN(xa_nn_tanh_f32_f32)
+
 

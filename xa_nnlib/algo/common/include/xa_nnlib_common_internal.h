@@ -106,6 +106,7 @@
 #define UINT4_LOWER_LIMIT            0
 #define UINT4_UPPER_LIMIT            15
 
+#define SIGMOID_MIN_BOUND           -103.9721f
 #define F32_MIN_VALUE                (FLOAT32)-3.4028235e38
 
 #define SHIFT_FACTOR_4_BIT           4
@@ -130,6 +131,9 @@
 #define EXPONENT_BIAS                127      // Bias for exponent in floating-point representation
 #define Q31_SHIFT_BITS               30       // Bit shift for Q31 representation
 #define Q24_SHIFT_BITS_MINUS_ONE     23
+
+#define MAX_LIMIT                    (FLOAT32)80.0       // Max value limit for tanh input
+#define OFFSET_TO_BASE               -3
 
 #define IS_ALIGN(p) ((((int)(p))&0x7) == 0)
 #define ALIGN(x)    __attribute__((aligned(x))) 
