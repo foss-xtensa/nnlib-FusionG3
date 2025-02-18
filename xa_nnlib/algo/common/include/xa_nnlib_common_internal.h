@@ -112,6 +112,9 @@
 #define SHIFT_FACTOR_4_BIT           4
 #define SCALE_FACTOR_4_BIT           16
 
+#define MASK_LOWER_NIBBLE            240
+#define STEP_BY_8_BYTES              8
+
 /* Macros for constants */
 #define CONST_ONE                    1
 #define CONST_TWO                    2
