@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2024 Cadence Design Systems, Inc.
+* Copyright (c) 2024-2025 Cadence Design Systems, Inc.
 *
 * Permission is hereby granted, free of charge, to any person obtaining
 * a copy of this software and associated documentation files (the
@@ -44,6 +44,7 @@ WORD32 init_prep(const WORD32 *const p_out_shape,
      *   eff_output_shape = {1,1,2,3,4};
      *   eff_permute_vec  = {0,3,1,2,4};
      */
+
     WORD32 itr, i;
     /* To store the intermediate output shape and intermediate permutation vector */
     WORD32 eff_output_shape[MAX_DIMS];
@@ -93,73 +94,102 @@ WORD32 init_prep(const WORD32 *const p_out_shape,
         }
     }
 
+
+    /* Count how many dimensions are the same between input and output */
+    itr = num_inp_dims - CONST_ONE; 
+    WORD32 merge_dims_count = 0;
+    WORD32 merge_end_pos = -1;
+
+    while (itr>0)
+    {
+        while ((itr >= 1) &&
+               (itr == eff_permute_vec[itr]) &&
+               ((itr - CONST_ONE) == eff_permute_vec[itr - CONST_ONE]))
+        {
+            if (!merge_dims_count)
+            {
+                merge_end_pos = itr;
+                merge_dims_count++;
+            }
+            merge_dims_count++;
+            itr--;
+        }
+        itr--;
+    }
+
+
     /*
      * Now, we promote smaller tensors to 5D tensors by adding leading dimensions (if needed)
+     * we determined the merge_dims_count and merge_end_pos.
+     * we update the p_5D_inp_shape, p_5D_out_shape accordingly.
+     *
      * At this point:
      *   p_5D_inp_shape[5]   = {1, 1, 1, 1, 1};
      *   p_5D_out_shape[5]   = {1, 1, 1, 1, 1};
      *   p_5D_permute_vec[5] = {0, 1, 2, 3, 4};
      */
-
-    /* Initialize the last dimension comparison */
-    WORD32 last_dim_same = CONST_ONE;
-    WORD32 last_n_same_dim = 0;
     itr = num_inp_dims - CONST_ONE;
+    WORD32 count_5d   = MAX_DIMS - CONST_ONE;
+    WORD32 merge_start_pos = (merge_dims_count == 0) ? merge_end_pos :
+                                (merge_end_pos - merge_dims_count + CONST_ONE);
 
-    /* Count how many trailing dimensions are the same between input and output */
     while (itr >= 0)
     {
-        last_n_same_dim =
-                (last_dim_same && (eff_permute_vec[itr] == itr)) ?
-                        (last_n_same_dim + CONST_ONE) : last_n_same_dim;
-        last_dim_same =
-                (eff_permute_vec[itr] == itr) ?
-                        last_dim_same & CONST_ONE : last_dim_same & 0;
+        p_5D_inp_shape[count_5d] *= p_inp_shape[itr];
+        p_5D_out_shape[count_5d] *= eff_output_shape[itr];
+
+        if (!((itr >  merge_start_pos) &&
+              (itr <= merge_end_pos)))
+        {
+            count_5d--;
+        }
         itr--;
     }
 
-    /* Now, update the 5D shapes and permutation vector */
-    /* Example:
-     * If input shape is {1,2,3,4,5}, permutation vector is {2,1,0,3,4}, and output is {3,2,1,4,5},
-     * we determine the last_n_same_dim and process the 5D shapes accordingly.
-     */
-    WORD32 dims_added = MAX_DIMS - num_inp_dims;
-    itr = num_inp_dims - CONST_ONE;
-    WORD32 same_count = last_n_same_dim;
-    WORD32 count = MAX_DIMS - CONST_ONE;
-
-    /* Calculate the new 5D input and output shapes */
-    while (itr >= 0)
-    {
-        p_5D_inp_shape[count] =
-                (same_count > 0) ?
-                        p_5D_inp_shape[count] * p_inp_shape[itr] :
-                        p_inp_shape[itr];
-        p_5D_out_shape[count] =
-                (same_count > 0) ?
-                        p_5D_out_shape[count] * eff_output_shape[itr] :
-                        eff_output_shape[itr];
-        same_count--;
-        itr--;
-        count = (same_count > 0) ? count : count - CONST_ONE;
-    }
 
     /* Update the permutation vector for 5D */
+    WORD32 dims_added = MAX_DIMS - num_inp_dims;
     itr = num_inp_dims - CONST_ONE;
-    same_count = (last_n_same_dim) ? num_inp_dims - (last_n_same_dim - CONST_ONE) : 0;
-    count = MAX_DIMS - CONST_ONE;
+    count_5d   = MAX_DIMS - CONST_ONE;
+    WORD32 offset;
 
     /* Set the correct permutation indices for the 5D tensor */
     while (itr >= 0)
     {
-        p_5D_permute_vec[count] =
-                (same_count > 0) ?
-                        eff_permute_vec[itr - (last_n_same_dim - CONST_ONE)]
-                                + dims_added + last_n_same_dim - CONST_ONE :
-                        eff_permute_vec[itr] + dims_added;
-        same_count--;
+        offset=0;
+
+        if (eff_permute_vec[itr] < merge_end_pos)
+        {
+            offset = merge_dims_count - CONST_ONE;
+        }
+
+        p_5D_permute_vec[count_5d] = eff_permute_vec[itr] + offset + dims_added;
+
+        if ((itr >= merge_start_pos) &&
+            (itr <= merge_end_pos))
+        {
+            itr = itr - merge_dims_count + CONST_ONE;
+        }
+
         itr--;
-        count--;
+        count_5d--;
+    }
+
+
+    /* finding last_n_same_dim */
+    WORD32 last_n_same_dim = 0;
+    itr = num_inp_dims - CONST_ONE;
+
+    if (eff_permute_vec[itr] == itr)
+    {
+        if (!merge_dims_count)
+        {
+            last_n_same_dim = 1;
+        }
+        else
+        {
+            last_n_same_dim = merge_dims_count;
+        }
     }
 
     /* Return the number of trailing dimensions that are the same (last_n_same_dim) */
@@ -671,4 +701,3 @@ WORD32 xa_nn_permute(WORD8 *__restrict__ p_out,
 
     return 0;
 }
-

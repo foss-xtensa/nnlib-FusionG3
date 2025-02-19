@@ -473,8 +473,7 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
         const WORD32 *const p_inp_shape,
         WORD32 num_inp_dims,
         const WORD32 *__restrict__ p_axis,
-        WORD32 num_axis_dims,
-        void *__restrict__ p_scratch_in);
+        WORD32 num_axis_dims);
 
 #if defined(__cplusplus)
 }
