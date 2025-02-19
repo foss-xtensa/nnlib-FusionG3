@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -1540,4 +1540,3 @@ WORD32 xa_nn_elm_where_broadcast_5D_f32xf32_f32(FLOAT32 *__restrict__ p_out,
 
     return 0;
 }
-

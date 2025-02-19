@@ -33,7 +33,8 @@ WORD32 are_two_axes_contiguous(WORD32 a, WORD32 b) {
 
 // Check if an axis is in the given axes list
 WORD32 is_axis_in_list(WORD32 axis, const WORD32 *axes, WORD32 num_axes) {
-    for (WORD32 i = 0; i < num_axes; i++) {
+	WORD32 i;
+    for (i = 0; i < num_axes; i++) {
         if (axes[i] == axis)
 		{
         	return 1;
@@ -44,10 +45,12 @@ WORD32 is_axis_in_list(WORD32 axis, const WORD32 *axes, WORD32 num_axes) {
 
 // Sort axes in ascending order (Bubble Sort)
 void sort_axes(WORD32 *axes, WORD32 num_axes) {
-    for (int i = 0; i < num_axes - 1; i++) {
-        for (int j = 0; j < num_axes - i - 1; j++) {
+	WORD32 temp;
+	WORD32 i, j;
+    for (i = 0; i < (num_axes - 1); i++) {
+        for (j = 0; j < (num_axes - i - 1); j++) {
             if (axes[j] > axes[j + 1]) {
-            	WORD32 temp = axes[j];
+                temp = axes[j];
                 axes[j] = axes[j + 1];
                 axes[j + 1] = temp;
             }
@@ -55,19 +58,13 @@ void sort_axes(WORD32 *axes, WORD32 num_axes) {
     }
 }
 
-// Merge contiguous subsets of axes while keeping preserved axes intact
-// Merge contiguous dimensions other than axis
-void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, const WORD32 *p_axis, WORD32 num_axes,
+// Merge contiguous axes
+// Merge contiguous dimensions other than axes
+void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, WORD32 *axes, WORD32 num_axes,
                 WORD32 *new_input_shape, WORD32 *new_num_dims, WORD32 *new_axes, WORD32 *new_num_axes) {
     *new_num_dims = 0;
     *new_num_axes = 0;
 
-    WORD32 axes[MAX_DIMS] = {0};
-    WORD32 j;
-    for(j = 0; j < num_axes; j++)
-    {
-    	axes[j] = p_axis[j];
-    }
 	// Sort axes to ensure merging happens in correct order
     sort_axes(axes, num_axes);
 
@@ -93,7 +90,7 @@ void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, const WOR
         } else {
 			// Start merging contiguous dimensions
             WORD32 merged_size = input_shape[i];
-            while (i + 1 < num_dims && !is_axis_in_list(i + 1, axes, num_axes)) {
+            while ((i + 1) < num_dims && !is_axis_in_list(i + 1, axes, num_axes)) {
                 merged_size *= input_shape[i + 1];
                 i++; // Move to the next dimension
             }
@@ -130,12 +127,16 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 	WORD32 axis_itr = 0, inp_itr = 0, out_itr = 0;
 	WORD32 num_elm_in_axis = 1;
 
+	WORD32 new_axes[MAX_DIMS] = {0};   // Buffer for new axes
+	WORD32 i = 0;
+
 	if (p_axis != NULL)
 	{
 		WORD32 current;
 		WORD32 dim_exist[MAX_DIMS];
 		WORD32 repeated_axis_dims = 0;
 		memset(dim_exist, 0, sizeof(dim_exist));
+
 		for (axis_itr = 0; axis_itr < num_axis_dims; axis_itr++)
 		{
 			current = p_axis[axis_itr];
@@ -148,6 +149,8 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 			{
 				num_elm_in_axis *= p_inp_shape[current];
 				dim_exist[current] = 1;
+				new_axes[i] = current;
+				i++;
 			}
 			else
 			{
@@ -215,13 +218,13 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 	}
 	/* For contiguous axis merge */
 	WORD32 new_input_shape[MAX_DIMS] = {0};  // Buffer for new shape
-	WORD32 new_axes[MAX_DIMS] = {0};   // Buffer for new axes
+	WORD32 new_axes_data[MAX_DIMS] = {0};   // Buffer for new axes
 	WORD32 new_num_inp_dims = 0, new_num_axis_dims = 0;
-	merge_axes_dims(p_inp_shape, num_inp_dims, p_axis, num_axis_dims, new_input_shape, &new_num_inp_dims, new_axes, &new_num_axis_dims);
+	merge_axes_dims(p_inp_shape, num_inp_dims, new_axes, num_axis_dims, new_input_shape, &new_num_inp_dims, new_axes_data, &new_num_axis_dims);
 
 	WORD32 last_dim = 0;
 	
-	if(new_axes[new_num_axis_dims - CONST_ONE] == (new_num_inp_dims - CONST_ONE))
+	if(new_axes_data[new_num_axis_dims - CONST_ONE] == (new_num_inp_dims - CONST_ONE))
 	{
 		last_dim = CONST_ONE;
 	}
@@ -278,7 +281,7 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 				if(axis_count == CONST_ONE)
 				{
 					WORD32 j;
-					for (j = 0; j < out_loop_count - CONST_THREE; j += CONST_FOUR)
+					for (j = 0; j < (out_loop_count - CONST_THREE); j += CONST_FOUR)
 					{
 						PDX_LA_MXF32_IP(x1, align_src1, p_src1);
 						PDX_SA_MXF32_IP(x1, align_dst, p_dst);

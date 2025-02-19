@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -154,7 +154,6 @@ WORD32 xa_nn_tanh_f32_f32(FLOAT32 *p_out,
         /* y <- ( 1 + exp(2*x) )/2 */
         r = half;
         PDX_MULA_MXF32(r, s, y);
-//        y = r;
 
         /*
          * Compute the reciprocal value r <- 1/(0.5+y) == 2/(1+exp(2*x))

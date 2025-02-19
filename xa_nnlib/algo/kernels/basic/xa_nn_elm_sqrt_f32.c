@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -64,7 +64,7 @@ WORD32 xa_nn_elm_sqrt_f32_f32(FLOAT32 *p_out,
 
         /* Store the result */
         PDX_SAV_MXF32_XP(z0, az, p_output,
-                (UWORD8*) p_out + num_elm * SIZE_OF_FLOAT - (UWORD8*) p_output);
+               (UWORD8*) p_out + num_elm * SIZE_OF_FLOAT - (UWORD8*) p_output);
     }
     /* Flushing output align register */
     PDX_SAPOS_MXF32_FP(az, p_output);

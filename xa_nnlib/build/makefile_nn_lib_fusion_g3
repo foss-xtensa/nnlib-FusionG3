@@ -113,7 +113,11 @@ INCLUDES = \
     -I$(ROOTDIR)/include/nnlib \
     -I$(ROOTDIR)/algo/kernels/tables/include
 
-#CFLAGS += -DENABLE_HIGH_PRECISION
+#CFLAGS += -DENABLE_HIGH_PRECISION \
+#           -fno-unsafe-math-optimizations
+
+#CFLAGS += -DENABLE_4BIT_PACK
+
 CFLAGS += \
         -ffunction-sections \
         

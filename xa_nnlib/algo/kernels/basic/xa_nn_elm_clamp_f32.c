@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -1265,7 +1265,8 @@ WORD32 xa_nn_elm_clamp_broadcast_5D_f32_f32(FLOAT32 *__restrict__ p_out,
     }
 
     /* Strides calculation */
-    WORD32 p_inp_strides[MAX_DIMS], p_min_strides[MAX_DIMS], p_max_strides[MAX_DIMS];
+    WORD32 p_inp_strides[MAX_DIMS], p_min_strides[MAX_DIMS],
+            p_max_strides[MAX_DIMS];
 
     strides_calculation(p_5d_inp_shape, p_5d_min_shape, p_5d_max_shape,
             p_inp_strides, p_min_strides, p_max_strides);
@@ -1379,7 +1380,8 @@ WORD32 xa_nn_elm_clamp_broadcast_5D_f32_f32(FLOAT32 *__restrict__ p_out,
     {
         WORD32 in_lc, out_lc;
         /* Check if 3rd dim needs to be broadcasted */
-        if (p_inp_strides[3] == 0 || p_min_strides[3] == 0 || p_max_strides[3] == 0)
+        if (p_inp_strides[3] == 0 || p_min_strides[3] == 0
+                || p_max_strides[3] == 0)
         {
             in_lc = p_5d_out_shape[4];
             out_lc = p_5d_out_shape[3];
@@ -1514,4 +1516,3 @@ WORD32 xa_nn_elm_clamp_broadcast_5D_f32_f32(FLOAT32 *__restrict__ p_out,
 
     return 0;
 }
-
