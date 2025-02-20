@@ -82,6 +82,8 @@ BASICOBJS =                          \
   xa_nn_elm_rsqrt_f32.o \
   xa_nn_elm_where_f32.o \
   xa_nn_elm_less_f32.o \
+  xa_nn_elm_sub_32xf32.o \
+  xa_nn_elm_sub_f32x32.o \
 
 
 NORMOBJS = \

@@ -27,12 +27,12 @@
 #include <string.h>
 
 // Function to check if two consecutive axes are contiguous
-WORD32 are_two_axes_contiguous(WORD32 a, WORD32 b) {
+static inline WORD32 are_two_axes_contiguous(WORD32 a, WORD32 b) {
     return (b == a + 1);
 }
 
 // Check if an axis is in the given axes list
-WORD32 is_axis_in_list(WORD32 axis, const WORD32 *axes, WORD32 num_axes) {
+static inline WORD32 is_axis_in_list(WORD32 axis, const WORD32 *axes, WORD32 num_axes) {
 	WORD32 i;
     for (i = 0; i < num_axes; i++) {
         if (axes[i] == axis)
@@ -44,7 +44,7 @@ WORD32 is_axis_in_list(WORD32 axis, const WORD32 *axes, WORD32 num_axes) {
 }
 
 // Sort axes in ascending order (Bubble Sort)
-void sort_axes(WORD32 *axes, WORD32 num_axes) {
+static inline void sort_axes(WORD32 *axes, WORD32 num_axes) {
 	WORD32 temp;
 	WORD32 i, j;
     for (i = 0; i < (num_axes - 1); i++) {
@@ -60,7 +60,7 @@ void sort_axes(WORD32 *axes, WORD32 num_axes) {
 
 // Merge contiguous axes
 // Merge contiguous dimensions other than axes
-void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, WORD32 *axes, WORD32 num_axes,
+static inline void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, WORD32 *axes, WORD32 num_axes,
                 WORD32 *new_input_shape, WORD32 *new_num_dims, WORD32 *new_axes, WORD32 *new_num_axes) {
     *new_num_dims = 0;
     *new_num_axes = 0;
@@ -223,7 +223,7 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 	merge_axes_dims(p_inp_shape, num_inp_dims, new_axes, num_axis_dims, new_input_shape, &new_num_inp_dims, new_axes_data, &new_num_axis_dims);
 
 	WORD32 last_dim = 0;
-	
+
 	if(new_axes_data[new_num_axis_dims - CONST_ONE] == (new_num_inp_dims - CONST_ONE))
 	{
 		last_dim = CONST_ONE;
@@ -348,7 +348,7 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 							/* Load input elements with stride "inner_stride" */
 							PDX_LAV_MXF32_XP(x1, align_src1, p_in_mxf32, rem_elm);
 
-							rem_sum = rem_sum + x1;//PDX_ADD_MXF32(rem_sum, x1);
+							rem_sum = PDX_ADD_MXF32(rem_sum, x1);
 						}
 
 						/* Store output */
@@ -684,7 +684,6 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 						out = PDX_RADD_MXF32(sum);
 						xtfloat_storeip(out, p_z, 4);
 					}
-				
 				}
 			}
 			else
@@ -772,7 +771,7 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 						/* Store output */
 						PDX_SAV_MXF32_XP(rem_sum, align_dst, p_dst, rem_elm);
 					}
-					PDX_SAPOS_MXF32_FP(align_dst, p_dst);			
+					PDX_SAPOS_MXF32_FP(align_dst, p_dst);
 				}
 			}
 		}
