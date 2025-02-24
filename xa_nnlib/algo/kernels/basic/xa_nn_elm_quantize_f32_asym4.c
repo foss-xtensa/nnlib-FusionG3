@@ -50,7 +50,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_ALIGN(p_out_zero_bias, sizeof(WORD32), UNSUPPORTED_PARAM);
 
     /* Invalid input checks
-     * quant_min should be >= -STEP_BY_8_BYTES,
+     * quant_min should be >= -8,
      * quant_max should be <= 7,
      * num_inp_dims should be greater than 0 and less than or equal to 5
      * p_inp_shape values should be positive
@@ -80,8 +80,8 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
     if (p_axis == NULL)
     {
-        /* out_scale should not be equal to zero,nan and infinity
-         * out_zero_bias should be in the range [-STEP_BY_8_BYTES,7]
+        /* out_scale should not be equal to zero, nan and infinity
+         * out_zero_bias should be in the range [-8,7]
          */
         XA_NNLIB_ARG_CHK_COND(
                 ((0 == *p_out_scale) || (isnan(*p_out_scale)) ||
@@ -102,7 +102,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
         /* Invalid input checks
          * axis should be in the range [0,num_inp_dims-1]
          * out_scale should not be equal to zero, nan and infinity
-         * out_zero_bias should be in the range [-STEP_BY_8_BYTES,7]
+         * out_zero_bias should be in the range [-8,7]
          */
         XA_NNLIB_ARG_CHK_COND(((axis < 0) || (axis >= num_inp_dims)),
                 UNSUPPORTED_PARAM);
@@ -148,20 +148,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
     xb_vecMx32 zb1;
 
-    WORD32 num_simd4_ops = (num_elm >> LOG2_PDX_M);
-    WORD32 num_scalar_ops = (num_elm & (PDX_M - CONST_ONE));
-
-    WORD32 rem_inp_elms = num_scalar_ops * SIZE_OF_FLOAT;
-    WORD32 rem_out_elms = (num_scalar_ops / CONST_TWO)
-            + (num_scalar_ops & CONST_ONE);
-
-    xb_vecMx32 z, clamped;
-    xb_vecMx32 min = quant_min;
-    xb_vecMx32 max = quant_max;
+    xb_vecMx32 z;
+    xb_vecMx32 min, max;
 
     xb_vecMxf32 one_over_scale1, one = PDX_CONST_MXF32(CONST_ONE);
 
-    xb_vecMx8 *__restrict__ p_z1 = (xb_vecMx8*) p_out;
+    xb_vecMx8 *__restrict__ p_z1;
     valign az1 = PDX_Z_ALIGN();
 
     xb_vecMx8 *__restrict__ p_z2;
@@ -182,115 +174,210 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
     WORD32 axis_index, leading_dims_index;
 
-#ifndef PACKED /* Code for bytes store */
+#ifndef ENABLE_4BIT_PACK  /* Code for bytes store (unpacked) */
     min = quant_min << SHIFT_FACTOR_4_BIT;
     max = quant_max << SHIFT_FACTOR_4_BIT;
 
     WORD32 two_times_lps = CONST_TWO * length_per_step;
 
-    /* Outermost loop iterates over the channels */
-    for (axis_index = 0; axis_index < axis_count; axis_index++)
+    /* If the axis is given and is equal to last dimension */
+    if (has_axis && (*p_axis == (num_inp_dims - CONST_ONE)))
     {
-        s1 = p_out_scale[axis_index];
-        zb1 = PDX_SLLI_MX32(p_out_zero_bias[axis_index],
-              SHIFT_FACTOR_4_BIT);
-        p_inp_base = p_inp + (axis_index * trailing_dims);
-        p_out_base = p_out + (axis_index * trailing_dims);
+        valign as, azb;
 
-        one_over_scale1 = PDX_DIV_MXF32(one, s1);
+        xb_vecMxf32 * __restrict__ p_s = (xb_vecMxf32*) (p_out_scale);
+        as = PDX_LA_MXF32_PP(p_s);
 
-        /* This loop iterates over the leading dims.
-         * All the elements are quantized at a time for
-         * single scale and zero_bias once loaded
-         */
-        for (leading_dims_index = 0;
-                leading_dims_index < leading_dims - CONST_ONE;
-                leading_dims_index += CONST_TWO)
+        xb_vecMx32 *__restrict__ p_zb = (xb_vecMx32*) (p_out_zero_bias);
+        azb = PDX_LA_MX32_PP(p_zb);
+
+        WORD32 num_scalar_ops = (axis_count & (PDX_M - CONST_ONE));
+
+        WORD32 rem_inp_elms = (num_scalar_ops * SIZE_OF_FLOAT);
+
+        for (axis_index = 0; axis_index < (axis_count - CONST_THREE);
+                axis_index += CONST_FOUR)
         {
-            p_x1 = (xb_vecMxf32*) p_inp_base;
-            ax1 = PDX_LA_MXF32_PP(p_x1);
-            p_z1 = (xb_vecMx8*) p_out_base;
+            PDX_LA_MXF32_IP(s1, as, p_s);
+            one_over_scale1 = PDX_DIV_MXF32(one, s1);
 
-            p_x2 = (xb_vecMxf32*) (p_inp_base + length_per_step);
-            ax2 = PDX_LA_MXF32_PP(p_x2);
-            p_z2 = (xb_vecMx8*) (p_out_base + length_per_step);
+            PDX_LA_MX32_IP(zb1, azb, p_zb);
+            zb1 = PDX_SLLI_MX32(zb1, SHIFT_FACTOR_4_BIT);
 
-            for (i = 0; i < num_simd4_ops; i++)
+            for (leading_dims_index = 0;
+                    leading_dims_index < leading_dims;
+                    leading_dims_index++)
             {
+                p_x1 = (xb_vecMxf32*) (p_inp
+                        + (leading_dims_index * length_per_step)
+                        + axis_index);
+                ax1 = PDX_LA_MXF32_PP(p_x1);
+
+                p_z1 = (xb_vecMx8*) (p_out
+                        + (leading_dims_index * length_per_step)
+                        + axis_index);
+
                 PDX_LA_MXF32_IP(x, ax1, p_x1);
+
                 x = PDX_MUL_MXF32(x, one_over_scale1);
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                PDX_SA32_MX8_IP(clamped, az1, p_z1);
-
-                PDX_LA_MXF32_IP(x, ax2, p_x2);
-                x = PDX_MUL_MXF32(x, one_over_scale1);
-                x = PDX_FIRINT_MXF32(x);
-                z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
-                z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
-
-                PDX_SA32_MX8_IP(clamped, az2, p_z2);
-
+                PDX_SA32_MX8_IP(z, az1, p_z1);
+                PDX_SAPOS_MX8_FP(az1, p_z1);
             }
-            PDX_LAV_MXF32_XP(x, ax1, p_x1, rem_inp_elms);
-            x = PDX_MUL_MXF32(x, one_over_scale1);
-            x = PDX_FIRINT_MXF32(x);
-            z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
 
-            PDX_SAV32_MX8_XP(clamped, az1, p_z1, rem_out_elms);
-            PDX_SAPOS_MX8_FP(az1, p_z1);
-
-            PDX_LAV_MXF32_XP(x, ax2, p_x2, rem_inp_elms);
-            x = PDX_MUL_MXF32(x, one_over_scale1);
-            x = PDX_FIRINT_MXF32(x);
-            z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
-
-            PDX_SAV32_MX8_XP(clamped, az2, p_z2, rem_out_elms);
-            PDX_SAPOS_MX8_FP(az2, p_z2);
-
-            p_inp_base = p_inp_base + two_times_lps;
-            p_out_base = p_out_base + two_times_lps;
         }
-        if ((leading_dims % CONST_TWO) != 0)
+        if((axis_count & CONST_THREE) != 0)
         {
-            p_x1 = (xb_vecMxf32*) p_inp_base;
-            ax1 = PDX_LA_MXF32_PP(p_x1);
-            p_z1 = (xb_vecMx8*) p_out_base;
+            PDX_LAV_MXF32_XP(s1, as, p_s, rem_inp_elms);
+            one_over_scale1 = PDX_DIV_MXF32(one, s1);
 
-            for (i = 0; i < num_simd4_ops; i++)
+            PDX_LAV_MX32_XP(zb1, azb, p_zb, rem_inp_elms);
+            zb1 = PDX_SLLI_MX32(zb1, SHIFT_FACTOR_4_BIT);
+
+            for (leading_dims_index = 0;
+                    leading_dims_index < leading_dims;
+                    leading_dims_index++)
             {
-                PDX_LA_MXF32_IP(x, ax1, p_x1);
+                p_x1 = (xb_vecMxf32*) (p_inp
+                        + (leading_dims_index * length_per_step)
+                        + axis_index);
+                ax1 = PDX_LA_MXF32_PP(p_x1);
+
+                p_z1 = (xb_vecMx8*) (p_out
+                        + (leading_dims_index * length_per_step)
+                        + axis_index);
+
+
+                PDX_LAV_MXF32_XP(x, ax1, p_x1, rem_inp_elms);
+
                 x = PDX_MUL_MXF32(x, one_over_scale1);
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                PDX_SA32_MX8_IP(clamped, az1, p_z1);
+                PDX_SAV32_MX8_XP(z, az1, p_z1, num_scalar_ops);
+                PDX_SAPOS_MX8_FP(az1, p_z1);
             }
-            PDX_LAV_MXF32_XP(x, ax1, p_x1, rem_inp_elms);
-            x = PDX_MUL_MXF32(x, one_over_scale1);
-            x = PDX_FIRINT_MXF32(x);
-            z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+        }
+    }
+    /* When axis is not given or axis is not last dim */
+    else
+    {
+        WORD32 num_simd4_ops = (num_elm >> LOG2_PDX_M);
+        WORD32 num_scalar_ops = (num_elm & (PDX_M - CONST_ONE));
+        WORD32 rem_inp_elms = num_scalar_ops * SIZE_OF_FLOAT;
 
-            PDX_SAV32_MX8_XP(clamped, az1, p_z1, rem_out_elms);
-            PDX_SAPOS_MX8_FP(az1, p_z1);
+        /* Outermost loop iterates over the channels */
+        for (axis_index = 0; axis_index < axis_count; axis_index++)
+        {
+            s1 = p_out_scale[axis_index];
+            zb1 = PDX_SLLI_MX32(p_out_zero_bias[axis_index],
+                  SHIFT_FACTOR_4_BIT);
+            p_inp_base = p_inp + (axis_index * trailing_dims);
+            p_out_base = p_out + (axis_index * trailing_dims);
+
+            one_over_scale1 = PDX_DIV_MXF32(one, s1);
+
+            /* This loop iterates over the leading dims.
+             * All the elements are quantized at a time for
+             * single scale and zero_bias once loaded
+             */
+            for (leading_dims_index = 0;
+                    leading_dims_index < (leading_dims - CONST_ONE);
+                    leading_dims_index += CONST_TWO)
+            {
+                p_x1 = (xb_vecMxf32*) p_inp_base;
+                ax1 = PDX_LA_MXF32_PP(p_x1);
+                p_z1 = (xb_vecMx8*) p_out_base;
+
+                p_x2 = (xb_vecMxf32*) (p_inp_base + length_per_step);
+                ax2 = PDX_LA_MXF32_PP(p_x2);
+                p_z2 = (xb_vecMx8*) (p_out_base + length_per_step);
+
+                for (i = 0; i < num_simd4_ops; i++)
+                {
+                    PDX_LA_MXF32_IP(x, ax1, p_x1);
+                    x = PDX_MUL_MXF32(x, one_over_scale1);
+                    x = PDX_FIRINT_MXF32(x);
+                    z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                    z = PDX_ADD_MX32(z, zb1);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
+
+                    PDX_SA32_MX8_IP(z, az1, p_z1);
+
+                    PDX_LA_MXF32_IP(x, ax2, p_x2);
+                    x = PDX_MUL_MXF32(x, one_over_scale1);
+                    x = PDX_FIRINT_MXF32(x);
+                    z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                    z = PDX_ADD_MX32(z, zb1);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
+
+                    PDX_SA32_MX8_IP(z, az2, p_z2);
+
+                }
+                PDX_LAV_MXF32_XP(x, ax1, p_x1, rem_inp_elms);
+                x = PDX_MUL_MXF32(x, one_over_scale1);
+                x = PDX_FIRINT_MXF32(x);
+                z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                z = PDX_ADD_MX32(z, zb1);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
+
+                PDX_SAV32_MX8_XP(z, az1, p_z1, num_scalar_ops);
+                PDX_SAPOS_MX8_FP(az1, p_z1);
+
+                PDX_LAV_MXF32_XP(x, ax2, p_x2, rem_inp_elms);
+                x = PDX_MUL_MXF32(x, one_over_scale1);
+                x = PDX_FIRINT_MXF32(x);
+                z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                z = PDX_ADD_MX32(z, zb1);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
+
+                PDX_SAV32_MX8_XP(z, az2, p_z2, num_scalar_ops);
+                PDX_SAPOS_MX8_FP(az2, p_z2);
+
+                p_inp_base = p_inp_base + two_times_lps;
+                p_out_base = p_out_base + two_times_lps;
+            }
+            if ((leading_dims & CONST_ONE) != 0)
+            {
+                p_x1 = (xb_vecMxf32*) p_inp_base;
+                ax1 = PDX_LA_MXF32_PP(p_x1);
+                p_z1 = (xb_vecMx8*) p_out_base;
+
+                for (i = 0; i < num_simd4_ops; i++)
+                {
+                    PDX_LA_MXF32_IP(x, ax1, p_x1);
+                    x = PDX_MUL_MXF32(x, one_over_scale1);
+                    x = PDX_FIRINT_MXF32(x);
+                    z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                    z = PDX_ADD_MX32(z, zb1);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
+
+                    PDX_SA32_MX8_IP(z, az1, p_z1);
+                }
+                PDX_LAV_MXF32_XP(x, ax1, p_x1, rem_inp_elms);
+                x = PDX_MUL_MXF32(x, one_over_scale1);
+                x = PDX_FIRINT_MXF32(x);
+                z = PDX_TRUNC32_MXF32(x, SHIFT_FACTOR_4_BIT);
+                z = PDX_ADD_MX32(z, zb1);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
+
+                PDX_SAV32_MX8_XP(z, az1, p_z1, num_scalar_ops);
+                PDX_SAPOS_MX8_FP(az1, p_z1);
+            }
         }
     }
 #else /* Code for bits4x2 store */
@@ -298,6 +385,9 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
     xb_vecMx32 odd_nibbles, even_nibbles, or;
     WORD8 *__restrict__ p_z_nibble;
     WORD32 rem_inp, rem_out;
+
+    min = quant_min;
+    max = quant_max;
 
     /* If the axis is given and is equal to last dimension */
     if (has_axis && (*p_axis == (num_inp_dims - CONST_ONE)))
@@ -311,12 +401,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
         WORD32 rem_inp_elms1, rem_inp_elms2;
         WORD32 rem_out_elms1, rem_out_elms2;
         WORD32 increment, leading_dims_limit;
-        WORD32 axis_count1, axis_count2;
+        WORD32 axis_count1, axis_count2, num_scalar_ops;
 
         /* If axis_count is even all the elements
          * are packed into bytes without leaving empty nibble.
          */
-        if ((axis_count % CONST_TWO) == 0)
+        if ((axis_count & CONST_ONE) == 0)
         {
             axis_count1 = axis_count;
             axis_count2 = 0;
@@ -324,7 +414,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             num_scalar_ops = (axis_count & (PDX_M - CONST_ONE));
 
             rem_inp_elms1 = num_scalar_ops * SIZE_OF_FLOAT;
-            rem_out_elms1 = (num_scalar_ops / CONST_TWO)
+            rem_out_elms1 = (num_scalar_ops >> CONST_ONE)
                     + (num_scalar_ops & CONST_ONE);
 
             leading_dims_limit = leading_dims;
@@ -332,7 +422,6 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
         }
         /* If axis_count is odd, number of elements in the
          * even rows is reduced by one and in the odd rows increased by one.
-         *
          */
         else
         {
@@ -340,17 +429,18 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             num_scalar_ops = (axis_count1 & (PDX_M - CONST_ONE));
 
             rem_inp_elms1 = num_scalar_ops * SIZE_OF_FLOAT;
-            rem_out_elms1 = (num_scalar_ops / CONST_TWO)
+            rem_out_elms1 = (num_scalar_ops >> CONST_ONE)
                     + (num_scalar_ops & CONST_ONE);
 
             axis_count2 = axis_count + CONST_ONE;
             num_scalar_ops = (axis_count2 & (PDX_M - CONST_ONE));
 
             rem_inp_elms2 = num_scalar_ops * SIZE_OF_FLOAT;
-            rem_out_elms2 = (num_scalar_ops / CONST_TWO)
+            rem_out_elms2 = (num_scalar_ops >> CONST_ONE)
                     + (num_scalar_ops & CONST_ONE);
 
-            leading_dims_limit = (leading_dims >> CONST_ONE) + CONST_ONE;
+            leading_dims_limit = (leading_dims >> CONST_ONE) +
+                    (leading_dims & CONST_ONE);
             increment = CONST_TWO;
         }
 
@@ -364,7 +454,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
          * If axis_count is odd all even rows are handled first and
          * then odd rows.
          */
-        for (axis_index = 0; axis_index < axis_count1 - CONST_THREE;
+        for (axis_index = 0; axis_index < (axis_count1 - CONST_THREE);
                 axis_index += CONST_FOUR)
         {
             PDX_LA_MXF32_IP(s1, as, p_s);
@@ -391,23 +481,23 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
                 PDX_SAPOS_MX8_FP(az1, p_z1);
             }
 
         }
-        if((axis_count1 % CONST_FOUR) != 0)
+        if((axis_count1 & CONST_THREE) != 0)
         {
             PDX_LAV_MXF32_XP(s1, as, p_s, rem_inp_elms1);
             one_over_scale1 = PDX_DIV_MXF32(one, s1);
@@ -434,47 +524,50 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, rem_out_elms1);
                 PDX_SAPOS_MX8_FP(az1, p_z1);
             }
         }
 
-        /* Getting last scale value and three scale values from starting
-         * into a register.
-         */
-        p_s = (xb_vecMxf32 *) (p_out_scale);
-        as = PDX_LA_MXF32_PP(p_s);
-        PDX_LAV_MXF32_XP(s1, as, p_s, CONST_THREE * SIZE_OF_FLOAT);
+        if (axis_count2 != 0)
+        {
+            /* Getting last scale value and three scale values from
+             * base addresses into a register.
+             */
+            p_s = (xb_vecMxf32 *) (p_out_scale);
+            as = PDX_LA_MXF32_PP(p_s);
+            PDX_LAV_MXF32_XP(s1, as, p_s, CONST_THREE * SIZE_OF_FLOAT);
 
-        FLOAT32 *p_s_end = p_out_scale + axis_count - CONST_ONE;
-        xb_vecMxf32 s_end = p_s_end[0];
-        s1 = PDX_SELI_MXF32(s1, s_end, PDX_SELI_32B_ROTATE_LEFT_1);
-        one_over_scale1 = PDX_DIV_MXF32(one, s1);
+            FLOAT32 *p_s_end = p_out_scale + axis_count - CONST_ONE;
+            xb_vecMxf32 s_end = p_s_end[0];
+            s1 = PDX_SELI_MXF32(s1, s_end, PDX_SELI_32B_ROTATE_LEFT_1);
+            one_over_scale1 = PDX_DIV_MXF32(one, s1);
 
-        /* Getting last zero_bias value and three zero_bias values
-         * from base addresses into a register.
-         */
-        p_zb = (xb_vecMx32*) (p_out_zero_bias);
-        azb = PDX_LA_MX32_PP(p_zb);
-        PDX_LAV_MX32_XP(zb1, azb, p_zb, CONST_THREE * SIZE_OF_INT);
+            /* Getting last zero_bias value and three zero_bias values
+             * from base addresses into a register.
+             */
+            p_zb = (xb_vecMx32*) (p_out_zero_bias);
+            azb = PDX_LA_MX32_PP(p_zb);
+            PDX_LAV_MX32_XP(zb1, azb, p_zb, CONST_THREE * SIZE_OF_INT);
 
-        WORD32 *p_zb_end = p_out_zero_bias + axis_count - CONST_ONE;
-        xb_vecMx32 zb_end = p_zb_end[0];
-        zb1 = PDX_SELI_MX32(zb1, zb_end, PDX_SELI_32B_ROTATE_LEFT_1);
+            WORD32 *p_zb_end = p_out_zero_bias + axis_count - CONST_ONE;
+            xb_vecMx32 zb_end = p_zb_end[0];
+            zb1 = PDX_SELI_MX32(zb1, zb_end, PDX_SELI_32B_ROTATE_LEFT_1);
+        }
 
         /* When axis_count is odd below code handles the odd rows */
-        for (axis_index = 0; axis_index < axis_count2 - CONST_THREE;
+        for (axis_index = 0; axis_index < (axis_count2 - CONST_THREE);
                 axis_index += CONST_FOUR)
         {
             for (leading_dims_index = CONST_ONE;
@@ -496,12 +589,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -515,7 +608,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
             PDX_LA_MX32_IP(zb1, azb, p_zb);
         }
-        if ((axis_count2 % CONST_FOUR) != 0)
+        if ((axis_count2 & CONST_THREE) != 0)
         {
             for (leading_dims_index = CONST_ONE;
                     leading_dims_index < leading_dims;
@@ -536,46 +629,54 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, rem_out_elms2);
                 PDX_SAPOS_MX8_FP(az1, p_z1);
             }
-            if ((leading_dims % CONST_TWO) != 0)
-            {
+        }
+        if ((axis_count2 != 0) &&
+                ((leading_dims & CONST_ONE) != 0))
+        {
 
-                p_z1 = (xb_vecMx8*) (p_out
-                        + ((leading_dims * axis_count) >> CONST_ONE));
+            p_z1 = (xb_vecMx8*) (p_out
+                    + ((leading_dims * axis_count) >> CONST_ONE));
 
-                FLOAT32 x_tmp = p_inp[(leading_dims * axis_count) - CONST_ONE];
+            FLOAT32 x_tmp = p_inp[(leading_dims * axis_count) - CONST_ONE];
 
-                x_tmp = x_tmp / p_out_scale[axis_count - CONST_ONE];
-                x_tmp = XT_FIRINT_S(x_tmp);
-                WORD32 z_tmp = XT_TRUNC_S(x_tmp, 0);
-                z_tmp = z_tmp + p_out_zero_bias[axis_count - CONST_ONE];
-                WORD32 clamped_tmp = XT_MIN(z_tmp, quant_max);
-                clamped_tmp = XT_MAX(clamped_tmp, quant_min);
+            x_tmp = x_tmp / p_out_scale[axis_count - CONST_ONE];
+            x_tmp = XT_FIRINT_S(x_tmp);
+            WORD32 z_tmp = XT_TRUNC_S(x_tmp, 0);
+            z_tmp = z_tmp + p_out_zero_bias[axis_count - CONST_ONE];
+            WORD32 clamped_tmp = XT_MIN(z_tmp, quant_max);
+            clamped_tmp = XT_MAX(clamped_tmp, quant_min);
 
-                even_nibbles = clamped_tmp << SHIFT_FACTOR_4_BIT;
+            even_nibbles = clamped_tmp << SHIFT_FACTOR_4_BIT;
 
-                PDX_SAV32_MX8_XP(even_nibbles, az1, p_z1, CONST_ONE);
-                PDX_SAPOS_MX8_FP(az1, p_z1);
-            }
+            PDX_SAV32_MX8_XP(even_nibbles, az1, p_z1, CONST_ONE);
+            PDX_SAPOS_MX8_FP(az1, p_z1);
         }
     }
     /* If axis is given and trailing_dims is even */
-    else if (has_axis && ((trailing_dims % CONST_TWO) == 0))
+    else if (has_axis && ((trailing_dims & CONST_ONE) == 0))
     {
+        WORD32 num_simd4_ops = (num_elm >> LOG2_PDX_M);
+        WORD32 num_scalar_ops = (num_elm & (PDX_M - CONST_ONE));
+        WORD32 rem_inp_elms = (num_scalar_ops * SIZE_OF_FLOAT);
+        WORD32 rem_out_elms = (num_scalar_ops >> CONST_ONE)
+                + (num_scalar_ops & CONST_ONE);
+
         WORD32 two_times_lps = CONST_TWO * length_per_step;
+        vboolM bool = PDX_LTRSAT_BM(num_scalar_ops);
 
         for (axis_index = 0; axis_index < axis_count; axis_index++)
         {
@@ -589,7 +690,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             one_over_scale1 = PDX_DIV_MXF32(one, s1);
 
             for (leading_dims_index = 0;
-                    leading_dims_index < leading_dims - CONST_ONE;
+                    leading_dims_index < (leading_dims - CONST_ONE);
                     leading_dims_index += CONST_TWO)
             {
 
@@ -611,16 +712,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                     x = PDX_FIRINT_MXF32(x);
                     z = PDX_TRUNC32_MXF32(x, 0);
                     z = PDX_ADD_MX32(z, zb1);
-                    clamped = PDX_MIN_MX32(z, max);
-                    clamped = PDX_MAX_MX32(clamped, min);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
 
-                    clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                    even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                    odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                    z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                    even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                    odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                     or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                     z = PDX_SELI_MX32(or, or,
-                    PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                            PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                     PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
 
@@ -629,16 +730,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                     x = PDX_FIRINT_MXF32(x);
                     z = PDX_TRUNC32_MXF32(x, 0);
                     z = PDX_ADD_MX32(z, zb1);
-                    clamped = PDX_MIN_MX32(z, max);
-                    clamped = PDX_MAX_MX32(clamped, min);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
 
-                    clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                    even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                    odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                    z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                    even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                    odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                     or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                     z = PDX_SELI_MX32(or, or,
-                    PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                            PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                     PDX_SAV32_MX8_XP(z, az2, p_z2, CONST_TWO);
                 }
@@ -646,13 +747,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_MUL_MXF32(x, one_over_scale1);
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
-                z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                PDX_ADD_MX32_T(z, z, zb1, bool);
+                PDX_MIN_MX32_T(z, z, max, bool);
+                PDX_MAX_MX32_T(z, z, min, bool);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -665,13 +766,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_MUL_MXF32(x, one_over_scale1);
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
-                z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                PDX_ADD_MX32_T(z, z, zb1, bool);
+                PDX_MIN_MX32_T(z, z, max, bool);
+                PDX_MAX_MX32_T(z, z, min, bool);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -684,7 +785,7 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 p_out_base = p_out_base + (two_times_lps >> CONST_ONE);
             }
 
-            if ((leading_dims % CONST_TWO) != 0)
+            if ((leading_dims & CONST_ONE) != 0)
             {
                 p_x1 = (xb_vecMxf32*) (p_inp_base);
                 ax1 = PDX_LA_MXF32_PP(p_x1);
@@ -697,16 +798,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                     x = PDX_FIRINT_MXF32(x);
                     z = PDX_TRUNC32_MXF32(x, 0);
                     z = PDX_ADD_MX32(z, zb1);
-                    clamped = PDX_MIN_MX32(z, max);
-                    clamped = PDX_MAX_MX32(clamped, min);
+                    z = PDX_MIN_MX32(z, max);
+                    z = PDX_MAX_MX32(z, min);
 
-                    clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                    even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                    odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                    z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                    even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                    odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                     or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                     z = PDX_SELI_MX32(or, or,
-                    PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                            PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                     PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
                 }
@@ -714,13 +815,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_MUL_MXF32(x, one_over_scale1);
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
-                z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                PDX_ADD_MX32_T(z, z, zb1, bool);
+                PDX_MIN_MX32_T(z, z, max, bool);
+                PDX_MAX_MX32_T(z, z, min, bool);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -743,6 +844,25 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
         circb czb = PDX_MOVC_AU32D((UWORD32) (p_zero_bias + axis_count),
                 (UWORD32) p_zero_bias);
 
+        WORD32 num_simd4_ops = (num_elm >> LOG2_PDX_M);
+        WORD32 num_scalar_ops = (num_elm & (PDX_M - CONST_ONE));
+        WORD32 rem_inp_elms = (num_scalar_ops * SIZE_OF_FLOAT);
+        WORD32 rem_out_elms = (num_scalar_ops >> CONST_ONE)
+                + (num_scalar_ops & CONST_ONE);
+
+        vboolM bool = PDX_LTRSAT_BM(num_scalar_ops);
+
+        WORD32 step_by_n_bytes, pointer_step = 0;
+        if (axis_count == CONST_ONE)
+        {
+            step_by_n_bytes = CONST_FOUR;
+        }
+        else
+        {
+            step_by_n_bytes = STEP_BY_8_BYTES;
+            pointer_step = CONST_ONE;
+        }
+
         xb_vecMx32 zb2;
         xb_vecMxf32 s2, one_over_scale2;
 
@@ -752,8 +872,8 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 leading_dims_index < (chunks - CONST_TWO);
                 leading_dims_index += CONST_FOUR)
         {
-            PDX_LSR_F32_XC(s1, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb1, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s1, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb1, p_zero_bias, step_by_n_bytes, czb);
             p_x1 = (xb_vecMxf32*) (p_inp +
                     (leading_dims_index * trailing_dims));
             ax1 = PDX_LA_MXF32_PP(p_x1);
@@ -764,8 +884,8 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                     + ((leading_dims_index * trailing_dims) >> CONST_ONE)
                     + ((leading_dims_index * trailing_dims) & CONST_ONE));
 
-            PDX_LSR_F32_XC(s2, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb2, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s2, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb2, p_zero_bias, step_by_n_bytes, czb);
             p_x2 = (xb_vecMxf32*) (p_inp +
                     ((leading_dims_index + CONST_TWO) * trailing_dims));
             ax2 = PDX_LA_MXF32_PP(p_x2);
@@ -785,12 +905,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
@@ -803,12 +923,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb2);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
@@ -821,13 +941,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_MUL_MXF32(x, one_over_scale1);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb1, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -840,13 +960,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_MUL_MXF32(x, one_over_scale2);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb2);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb2, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -859,8 +979,8 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
         if (((chunks & CONST_THREE) == CONST_ONE)
                 || ((chunks & CONST_THREE) == CONST_TWO))
         {
-            PDX_LSR_F32_XC(s1, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb1, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s1, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb1, p_zero_bias, step_by_n_bytes, czb);
             p_x1 = (xb_vecMxf32*) (p_inp +
                     (leading_dims_index * trailing_dims));
             ax1 = PDX_LA_MXF32_PP(p_x1);
@@ -878,16 +998,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
             }
@@ -895,13 +1015,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_MUL_MXF32(x, one_over_scale1);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb1, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -915,12 +1035,17 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
         rem_out = rem_out_elms - CONST_ONE;
 
+        bool = PDX_LTRSAT_BM(num_scalar_ops - CONST_ONE);
+
+        p_scale = (p_out_scale + pointer_step);
+        p_zero_bias = (p_out_zero_bias + pointer_step);
+
         for (leading_dims_index = CONST_ONE;
                 leading_dims_index < (chunks - CONST_TWO);
                 leading_dims_index += CONST_FOUR)
         {
-            PDX_LSR_F32_XC(s1, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb1, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s1, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb1, p_zero_bias, step_by_n_bytes, czb);
             p_x1 = (xb_vecMxf32*) (p_inp
                     + (leading_dims_index * trailing_dims));
             ax1 = PDX_LA_MXF32_PP(p_x1);
@@ -937,17 +1062,17 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
             z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            z = PDX_MIN_MX32(z, max);
+            z = PDX_MAX_MX32(z, min);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
             odd_nibbles = p_z_nibble[0];
-            z = PDX_OR_MX32(clamped, odd_nibbles);
+            z = PDX_OR_MX32(z, odd_nibbles);
 
             PDX_SS32_8_IP(z, p_z_nibble, CONST_ONE);
 
-            PDX_LSR_F32_XC(s2, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb2, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s2, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb2, p_zero_bias, step_by_n_bytes, czb);
             p_x2 = (xb_vecMxf32*) (p_inp +
                     ((leading_dims_index + CONST_TWO) * trailing_dims));
             ax2 = PDX_LA_MXF32_PP(p_x2);
@@ -966,12 +1091,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
             z = PDX_ADD_MX32(z, zb2);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            z = PDX_MIN_MX32(z, max);
+            z = PDX_MAX_MX32(z, min);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
             odd_nibbles = p_z_nibble[0];
-            z = PDX_OR_MX32(clamped, odd_nibbles);
+            z = PDX_OR_MX32(z, odd_nibbles);
 
             PDX_SS32_8_IP(z, p_z_nibble, CONST_ONE);
 
@@ -982,16 +1107,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
 
@@ -1000,16 +1125,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb2);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az2, p_z2, CONST_TWO);
             }
@@ -1017,13 +1142,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_MUL_MXF32(x, one_over_scale1);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb1, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -1033,16 +1158,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             PDX_SAPOS_MX8_FP(az1, p_z1);
 
             PDX_LAV_MXF32_XP(x, ax2, p_x2, rem_inp);
-            x = PDX_MUL_MXF32(x, one_over_scale1);
+            x = PDX_MUL_MXF32(x, one_over_scale2);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb2);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb2, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
@@ -1051,11 +1176,11 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
 
             PDX_SAPOS_MX8_FP(az2, p_z2);
         }
-        if (((chunks & CONST_THREE) == 0)
+        if (((chunks & CONST_THREE) == CONST_THREE)
                 || ((chunks & CONST_THREE) == CONST_TWO))
         {
-            PDX_LSR_F32_XC(s1, p_scale, STEP_BY_8_BYTES, cs);
-            PDX_LSR_32_XC(zb1, p_zero_bias, STEP_BY_8_BYTES, czb);
+            PDX_LSR_F32_XC(s1, p_scale, step_by_n_bytes, cs);
+            PDX_LSR_32_XC(zb1, p_zero_bias, step_by_n_bytes, czb);
             p_x1 = (xb_vecMxf32*) (p_inp
                     + (leading_dims_index * trailing_dims));
             ax1 = PDX_LA_MXF32_PP(p_x1);
@@ -1072,12 +1197,12 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
             z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            z = PDX_MIN_MX32(z, max);
+            z = PDX_MAX_MX32(z, min);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
             odd_nibbles = p_z_nibble[0];
-            z = PDX_OR_MX32(clamped, odd_nibbles);
+            z = PDX_OR_MX32(z, odd_nibbles);
 
             PDX_SS32_8_IP(z, p_z_nibble, CONST_ONE);
 
@@ -1088,16 +1213,16 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
                 x = PDX_FIRINT_MXF32(x);
                 z = PDX_TRUNC32_MXF32(x, 0);
                 z = PDX_ADD_MX32(z, zb1);
-                clamped = PDX_MIN_MX32(z, max);
-                clamped = PDX_MAX_MX32(clamped, min);
+                z = PDX_MIN_MX32(z, max);
+                z = PDX_MAX_MX32(z, min);
 
-                clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-                even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-                odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+                z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+                even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+                odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
                 or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
                 z = PDX_SELI_MX32(or, or,
-                PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
+                        PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);
 
                 PDX_SAV32_MX8_XP(z, az1, p_z1, CONST_TWO);
             }
@@ -1105,13 +1230,13 @@ WORD32 xa_nn_elm_quantize_f32_asym4(WORD8 *__restrict__ p_out,
             x = PDX_MUL_MXF32(x, one_over_scale1);
             x = PDX_FIRINT_MXF32(x);
             z = PDX_TRUNC32_MXF32(x, 0);
-            z = PDX_ADD_MX32(z, zb1);
-            clamped = PDX_MIN_MX32(z, max);
-            clamped = PDX_MAX_MX32(clamped, min);
+            PDX_ADD_MX32_T(z, z, zb1, bool);
+            PDX_MIN_MX32_T(z, z, max, bool);
+            PDX_MAX_MX32_T(z, z, min, bool);
 
-            clamped = PDX_AND_MX32(clamped, MASK_HIGHER_NIBBLE);
-            even_nibbles = PDX_SLLI_MX32(clamped, SHIFT_FACTOR_4_BIT);
-            odd_nibbles = PDX_SHFLI_MX32(clamped, PDX_SHFLI_32B_SWAP_1);
+            z = PDX_AND_MX32(z, MASK_HIGHER_NIBBLE);
+            even_nibbles = PDX_SLLI_MX32(z, SHIFT_FACTOR_4_BIT);
+            odd_nibbles = PDX_SHFLI_MX32(z, PDX_SHFLI_32B_SWAP_1);
             or = PDX_OR_MX32(even_nibbles, odd_nibbles);
 
             z = PDX_SELI_MX32(or, or, PDX_SELI_32B_EXTRACT_1_OF_2_OFF_0);

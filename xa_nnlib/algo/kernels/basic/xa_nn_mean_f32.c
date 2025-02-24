@@ -60,8 +60,10 @@ static inline void sort_axes(WORD32 *axes, WORD32 num_axes) {
 
 // Merge contiguous axes
 // Merge contiguous dimensions other than axes
-static inline void merge_axes_dims(const WORD32 *const input_shape, WORD32 num_dims, WORD32 *axes, WORD32 num_axes,
-                WORD32 *new_input_shape, WORD32 *new_num_dims, WORD32 *new_axes, WORD32 *new_num_axes) {
+static inline void merge_axes_dims(const WORD32 *const input_shape,
+                                   WORD32 num_dims, WORD32 *axes, WORD32 num_axes,
+                                   WORD32 *new_input_shape, WORD32 *new_num_dims,
+                                   WORD32 *new_axes, WORD32 *new_num_axes) {
     *new_num_dims = 0;
     *new_num_axes = 0;
 
@@ -179,7 +181,8 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 	XA_NNLIB_ARG_CHK_ALIGN(p_out_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
 	XA_NNLIB_ARG_CHK_ALIGN(p_inp_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
 
-	if ((p_axis == NULL ) || (num_axis_dims == 0) || (num_axis_dims == num_inp_dims))
+	if ((p_axis == NULL ) || (num_axis_dims == 0) ||
+             (num_axis_dims == num_inp_dims) || (num_inp_dims == CONST_ONE))
 	{
 		WORD32 num_elm = CONST_ONE;
 		WORD32 len;
@@ -220,22 +223,22 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 	WORD32 new_input_shape[MAX_DIMS] = {0};  // Buffer for new shape
 	WORD32 new_axes_data[MAX_DIMS] = {0};   // Buffer for new axes
 	WORD32 new_num_inp_dims = 0, new_num_axis_dims = 0;
-	merge_axes_dims(p_inp_shape, num_inp_dims, new_axes, num_axis_dims, new_input_shape, &new_num_inp_dims, new_axes_data, &new_num_axis_dims);
+	merge_axes_dims(p_inp_shape, num_inp_dims, new_axes, num_axis_dims,
+          new_input_shape, &new_num_inp_dims, new_axes_data, &new_num_axis_dims);
 
 	WORD32 last_dim = 0;
-
+	
 	if(new_axes_data[new_num_axis_dims - CONST_ONE] == (new_num_inp_dims - CONST_ONE))
 	{
 		last_dim = CONST_ONE;
 	}
 
-	const xb_vecMxf32 *__restrict__ p_src1 = (xb_vecMxf32 *)p_inp;
-	valign align_src1 = PDX_LA_MXF32_PP(p_src1);
-	const xb_vecMxf32 *__restrict__ p_src2 = (xb_vecMxf32 *)p_inp;
-	valign align_src2 = PDX_LA_MXF32_PP(p_src2);
-	xb_vecMxf32 *__restrict__ p_dst = (xb_vecMxf32 *)p_out;
-	valign align_dst = PDX_Z_ALIGN();
-
+	const xb_vecMxf32 *__restrict__ p_src1;
+	const xb_vecMxf32 *__restrict__ p_src2;
+    const xb_vecMxf32 *__restrict__ p_in_mxf32;
+	xb_vecMxf32 *__restrict__ p_dst;
+    valign align_src1, align_src2;
+    valign align_dst;
 	xb_vecMxf32 x0 = 0, x1 = 0, x2 = 0;
 	WORD32 axis_count , out_loop_count;
 	WORD32 rem_elm, rem_axis, inner_stride_bytes;
@@ -272,7 +275,14 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 			}
 			else
 			{
-				const xb_vecMxf32 *__restrict__ p_in_mxf32 = (const xb_vecMxf32 *)(p_inp);
+				p_src1 = (const xb_vecMxf32 *)(p_inp);
+				p_src2 = (const xb_vecMxf32 *)(p_inp);
+				p_in_mxf32 = (const xb_vecMxf32 *)(p_inp);
+				align_src1 = PDX_LA_MXF32_PP(p_src1);
+				align_src2 = PDX_LA_MXF32_PP(p_src2);
+				p_dst = (xb_vecMxf32 *)p_out;
+				align_dst = PDX_Z_ALIGN();
+        
 				axis_count = new_input_shape[0];
 				out_loop_count = new_input_shape[1];
 				inner_stride_bytes = out_loop_count << CONST_TWO;
@@ -398,7 +408,13 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 			}
 			else
 			{
-				const xb_vecMxf32 *__restrict__ p_in_mxf32 = (xb_vecMxf32 *)p_inp;
+				p_src1 = (const xb_vecMxf32 *)(p_inp);
+				p_src2 = (const xb_vecMxf32 *)(p_inp);
+				p_in_mxf32 = (const xb_vecMxf32 *)(p_inp);
+				align_src1 = PDX_LA_MXF32_PP(p_src1);
+				align_src2 = PDX_LA_MXF32_PP(p_src2);
+				p_dst = (xb_vecMxf32 *)p_out;
+				align_dst = PDX_Z_ALIGN();
 
 				WORD32 Dim0 = new_input_shape[0];
 				WORD32 Dim1 = new_input_shape[1];
@@ -542,7 +558,13 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 			}
 			else
 			{
-				const xb_vecMxf32 *__restrict__ p_in_mxf32 = (xb_vecMxf32 *)p_inp;
+				p_src1 = (const xb_vecMxf32 *)(p_inp);
+				p_src2 = (const xb_vecMxf32 *)(p_inp);
+				p_in_mxf32 = (const xb_vecMxf32 *)(p_inp);
+				align_src1 = PDX_LA_MXF32_PP(p_src1);
+				align_src2 = PDX_LA_MXF32_PP(p_src2);
+				p_dst = (xb_vecMxf32 *)p_out;
+				align_dst = PDX_Z_ALIGN();
 
 				WORD32 Dim0 = new_input_shape[0];
 				WORD32 Dim1 = new_input_shape[1];
@@ -688,7 +710,13 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
 			}
 			else
 			{
-				const xb_vecMxf32 *__restrict__ p_in_mxf32 = (xb_vecMxf32 *)p_inp;
+				p_src1 = (const xb_vecMxf32 *)(p_inp);
+				p_src2 = (const xb_vecMxf32 *)(p_inp);
+				p_in_mxf32 = (const xb_vecMxf32 *)(p_inp);
+				align_src1 = PDX_LA_MXF32_PP(p_src1);
+				align_src2 = PDX_LA_MXF32_PP(p_src2);
+				p_dst = (xb_vecMxf32 *)p_out;
+				align_dst = PDX_Z_ALIGN();
 
 				WORD32 Dim0 = new_input_shape[0];
 				WORD32 Dim1 = new_input_shape[1];

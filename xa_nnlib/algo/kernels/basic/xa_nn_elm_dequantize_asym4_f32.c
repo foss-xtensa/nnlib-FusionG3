@@ -107,13 +107,13 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
                     UNSUPPORTED_PARAM);
         }
 
-        /* calculating leading dims */
+        /* Calculating leading dims */
         for (i = 0; i < axis; i++)
         {
             leading_dims *= p_inp_shape[i];
         }
 
-        /* calculating trailing dims */
+        /* Calculating trailing dims */
         for (i = axis + CONST_ONE; i < num_inp_dims; i++)
         {
             trailing_dims *= p_inp_shape[i];
@@ -144,9 +144,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
     const xb_vecMx8 * p_x2;
     xb_vecMxf32 *__restrict__ p_z2;
 
-    WORD32 leading_dim_idx;
-    WORD32 num_rem_inps = (num_elm & (PDX_M - CONST_ONE));
-    WORD32 num_rem_outs = num_rem_inps * SIZE_OF_FLOAT;
+    WORD32 leading_dim_idx, num_rem_inps, num_rem_outs;
 
     /* Align registers */
     valign ax1, az1, ax2, az2;
@@ -158,83 +156,157 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
     /* Variables to hold output and scale values */
     xb_vecMxf32 z, s1;
 
-#ifndef PACKED /* Code for bytes store (unpacked) */
+#ifndef ENABLE_4BIT_PACK /* Code for bytes store (unpacked) */
     WORD32 two_times_lps = CONST_TWO * length_per_step;
-    for (axis_index = 0; axis_index < axis_count; axis_index++)
+
+    /* When axis is given and is also last dimension */
+    if (has_axis && (*p_axis == (num_inp_dims - CONST_ONE)))
     {
-        s1 = (p_inp_scale[axis_index] / SCALE_FACTOR_4_BIT);
-        zb1 = (p_inp_zero_bias[axis_index] << SHIFT_FACTOR_4_BIT);
-        p_inp_base = p_inp + (axis_index * trailing_dims);
-        p_out_base = p_out + (axis_index * trailing_dims);
+        valign as, azb;
 
-        /* This loop iterates over the leading dims.
-         * All the elements are quantized at a time for
-         * single scale and zero_bias once loaded
-         */
-        for (leading_dim_idx = 0; leading_dim_idx < leading_dims - CONST_ONE;
-                leading_dim_idx += CONST_TWO)
+        xb_vecMxf32 *__restrict__ p_s = (xb_vecMxf32*) p_inp_scale;
+        as = PDX_LA_MXF32_PP(p_s);
+
+        xb_vecMx32 *__restrict__ p_zb = (xb_vecMx32*) p_inp_zero_bias;
+        azb = PDX_LA_MX32_PP(p_zb);
+
+        num_rem_inps = (length_per_step & (PDX_M - CONST_ONE));
+        num_rem_outs = (num_rem_inps * SIZE_OF_FLOAT);
+
+        for (axis_index = 0; axis_index < (axis_count - CONST_THREE);
+                axis_index += CONST_FOUR)
         {
-            p_x1 = (const xb_vecMx8*) p_inp_base;
-            ax1 = PDX_LA_MX8_PP(p_x1);
-            p_z1 = (xb_vecMxf32*) p_out_base;
-
-            p_x2 = (const xb_vecMx8*) (p_inp_base + length_per_step);
-            ax2 = PDX_LA_MX8_PP(p_x2);
-            p_z2 = (xb_vecMxf32*) (p_out_base + length_per_step);
-
-            for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+            PDX_LA_MXF32_IP(s1, as, p_s);
+            PDX_LA_MX32_IP(zb1, azb, p_zb);
+            for (leading_dim_idx = 0;
+                    leading_dim_idx < (leading_dims);
+                    leading_dim_idx++)
             {
+                p_x1 = (xb_vecMx8*) (p_inp
+                        + (leading_dim_idx * length_per_step) + axis_index);
+                ax1 = PDX_LA_MX8_PP(p_x1);
+
+                p_z1 = (xb_vecMxf32*) (p_out
+                        + (leading_dim_idx * length_per_step) + axis_index);
+
                 PDX_LA32_MX8_IP(x, ax1, p_x1);
+                x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
+
                 x = PDX_SUB_MX32(x, zb1);
                 z = PDX_MUL_MXF32(x, s1);
                 PDX_SA_MXF32_IP(z, az1, p_z1);
-
-                PDX_LA32_MX8_IP(x, ax2, p_x2);
-                x = PDX_SUB_MX32(x, zb1);
-                z = PDX_MUL_MXF32(x, s1);
-                PDX_SA_MXF32_IP(z, az2, p_z2);
+                PDX_SAPOS_MXF32_FP(az1, p_z1);
             }
-            PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
-            x = PDX_SUB_MX32(x, zb1);
-            z = PDX_MUL_MXF32(x, s1);
-            PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
-            PDX_SAPOS_MXF32_FP(az1, p_z1);
-
-            PDX_LAV32_MX8_XP(x, ax2, p_x2, num_rem_inps);
-            x = PDX_SUB_MX32(x, zb1);
-            z = PDX_MUL_MXF32(x, s1);
-            PDX_SAV_MXF32_XP(z, az2, p_z2, num_rem_outs);
-            PDX_SAPOS_MXF32_FP(az2, p_z2);
-
-            p_inp_base = p_inp_base + two_times_lps;
-            p_out_base = p_out_base + two_times_lps;
         }
-        if ((leading_dims % CONST_TWO) != 0)
+        /* Remaining scale and zero_bias values are loaded */
+        if((axis_count & CONST_THREE) != 0)
         {
-            p_x1 = (const xb_vecMx8*) p_inp_base;
-            ax1 = PDX_LA_MX8_PP(p_x1);
-            p_z1 = (xb_vecMxf32*) p_out_base;
+            PDX_LAV_MXF32_XP(s1, as, p_s, num_rem_outs);
+            PDX_LAV_MX32_XP(zb1, azb, p_zb, num_rem_outs);
 
-            for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+            for (leading_dim_idx = 0;
+                    leading_dim_idx < leading_dims;
+                    leading_dim_idx++)
             {
-                PDX_LA32_MX8_IP(x, ax1, p_x1);
+                p_x1 = (xb_vecMx8*) (p_inp
+                        + (leading_dim_idx * length_per_step) + axis_index);
+                ax1 = PDX_LA_MX8_PP(p_x1);
+
+                p_z1 = (xb_vecMxf32*) (p_out
+                        + (leading_dim_idx * length_per_step) + axis_index);
+
+                PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
+                x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
+
                 x = PDX_SUB_MX32(x, zb1);
                 z = PDX_MUL_MXF32(x, s1);
-                PDX_SA_MXF32_IP(z, az1, p_z1);
+                PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
+                PDX_SAPOS_MXF32_FP(az1, p_z1);
             }
-            PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
-            x = PDX_SUB_MX32(x, zb1);
-            z = PDX_MUL_MXF32(x, s1);
-            PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
-            PDX_SAPOS_MXF32_FP(az1, p_z1);
+        }
+    }
+    /* When axis is not given or axis is not last dim */
+    else
+    {
+        num_rem_inps = (num_elm & (PDX_M - CONST_ONE));
+        num_rem_outs = (num_rem_inps * SIZE_OF_FLOAT);
+        for (axis_index = 0; axis_index < axis_count; axis_index++)
+        {
+            s1 = (p_inp_scale[axis_index] / SCALE_FACTOR_4_BIT);
+            zb1 = (p_inp_zero_bias[axis_index] << SHIFT_FACTOR_4_BIT);
+            p_inp_base = p_inp + (axis_index * trailing_dims);
+            p_out_base = p_out + (axis_index * trailing_dims);
+
+            /* This loop iterates over the leading dims.
+             * All the elements are quantized at a time for
+             * single scale and zero_bias once loaded
+             */
+            for (leading_dim_idx = 0;
+                    leading_dim_idx < (leading_dims - CONST_ONE);
+                    leading_dim_idx += CONST_TWO)
+            {
+                p_x1 = (const xb_vecMx8*) p_inp_base;
+                ax1 = PDX_LA_MX8_PP(p_x1);
+                p_z1 = (xb_vecMxf32*) p_out_base;
+
+                p_x2 = (const xb_vecMx8*) (p_inp_base + length_per_step);
+                ax2 = PDX_LA_MX8_PP(p_x2);
+                p_z2 = (xb_vecMxf32*) (p_out_base + length_per_step);
+
+                for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+                {
+                    PDX_LA32_MX8_IP(x, ax1, p_x1);
+                    x = PDX_SUB_MX32(x, zb1);
+                    z = PDX_MUL_MXF32(x, s1);
+                    PDX_SA_MXF32_IP(z, az1, p_z1);
+
+                    PDX_LA32_MX8_IP(x, ax2, p_x2);
+                    x = PDX_SUB_MX32(x, zb1);
+                    z = PDX_MUL_MXF32(x, s1);
+                    PDX_SA_MXF32_IP(z, az2, p_z2);
+                }
+                PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
+                x = PDX_SUB_MX32(x, zb1);
+                z = PDX_MUL_MXF32(x, s1);
+                PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
+                PDX_SAPOS_MXF32_FP(az1, p_z1);
+
+                PDX_LAV32_MX8_XP(x, ax2, p_x2, num_rem_inps);
+                x = PDX_SUB_MX32(x, zb1);
+                z = PDX_MUL_MXF32(x, s1);
+                PDX_SAV_MXF32_XP(z, az2, p_z2, num_rem_outs);
+                PDX_SAPOS_MXF32_FP(az2, p_z2);
+
+                p_inp_base = p_inp_base + two_times_lps;
+                p_out_base = p_out_base + two_times_lps;
+            }
+            if ((leading_dims & CONST_ONE) != 0)
+            {
+                p_x1 = (const xb_vecMx8*) p_inp_base;
+                ax1 = PDX_LA_MX8_PP(p_x1);
+                p_z1 = (xb_vecMxf32*) p_out_base;
+
+                for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
+                {
+                    PDX_LA32_MX8_IP(x, ax1, p_x1);
+                    x = PDX_SUB_MX32(x, zb1);
+                    z = PDX_MUL_MXF32(x, s1);
+                    PDX_SA_MXF32_IP(z, az1, p_z1);
+                }
+                PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
+                x = PDX_SUB_MX32(x, zb1);
+                z = PDX_MUL_MXF32(x, s1);
+                PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
+                PDX_SAPOS_MXF32_FP(az1, p_z1);
+            }
         }
     }
 /* Code for Bits4x2 */
 #else
     /* Number of chunks of size 16 */
-    WORD32 num_simd_nibbles = total_num_elm >> PDX_M;
+    WORD32 num_simd_nibbles = (total_num_elm >> PDX_M);
     /* Remaining number of elements */
-    WORD32 num_rem_nibbles = total_num_elm & (PDX_4M - CONST_ONE);
+    WORD32 num_rem_nibbles = (total_num_elm & (PDX_4M - CONST_ONE));
 
     /* Number of bytes required to pack remaining elements */
     WORD32 offset = (num_rem_nibbles >> CONST_ONE)
@@ -250,8 +322,31 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
     xb_vec4Mx8 * p_z0 = (xb_vec4Mx8*) p_scratch_buff;
     valign az0 = PDX_Z_ALIGN();
 
-    /* Masks the lower nibble to get higher nibble. */
-    xb_vec4Mx8 mask_lower_nibble = MASK_LOWER_NIBBLE;
+    /* Code for unpacking nibbles to bytes.
+     * Unpacked nibbles are left justified by 4 bits
+     * before storing to a byte.
+     */
+    for (i = 0; i < num_simd_nibbles; i++)
+    {
+        PDX_LAV_4MX8_XP(x0, ax0, p_x0, CONST_EIGHT);
+        odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
+        even_nibble = PDX_AND_4MX8(x0, MASK_LOWER_NIBBLE);
+        z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
+                PDX_SELI_8B_INTERLEAVE_1_LO);
+        PDX_SA_4MX8_IP(z0, az0, p_z0);
+    }
+
+    PDX_LAV_4MX8_XP(x0, ax0, p_x0, offset);
+
+    odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
+
+    even_nibble = PDX_AND_4MX8(x0, MASK_LOWER_NIBBLE);
+
+    z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
+            PDX_SELI_8B_INTERLEAVE_1_LO);
+
+    PDX_SAV_4MX8_XP(z0, az0, p_z0, num_rem_nibbles);
+    PDX_SAPOS_4MX8_FP(az0, p_z0);
 
     xb_vecMxf32 s2;
     xb_vecMx32 zb2;
@@ -259,40 +354,6 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
     /* When axis is given and is also last dimension */
     if (has_axis && (*p_axis == (num_inp_dims - CONST_ONE)))
     {
-        /* Code for unpacking nibbles to bytes.
-         * Unpacked nibbles are left justified by 4 bits
-         * before storing to a byte.
-         */
-        for (i = 0; i < num_simd_nibbles; i++)
-        {
-            PDX_LAV_4MX8_XP(x0, ax0, p_x0, 8);
-
-            odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
-
-            even_nibble = PDX_AND_4MX8(x0, mask_lower_nibble);
-
-            z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
-                    PDX_SELI_8B_INTERLEAVE_1_LO);
-
-            z0 = PDX_SRAI_4MX8(z0, SHIFT_FACTOR_4_BIT);
-
-            PDX_SA_4MX8_IP(z0, az0, p_z0);
-        }
-
-        PDX_LAV_4MX8_XP(x0, ax0, p_x0, offset);
-
-        odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
-
-        even_nibble = PDX_AND_4MX8(x0, mask_lower_nibble);
-
-        z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
-                PDX_SELI_8B_INTERLEAVE_1_LO);
-
-        z0 = PDX_SRAI_4MX8(z0, SHIFT_FACTOR_4_BIT);
-
-        PDX_SAV_4MX8_XP(z0, az0, p_z0, num_rem_nibbles);
-        PDX_SAPOS_4MX8_FP(az0, p_z0);
-
         valign as, azb;
 
         xb_vecMxf32 *__restrict__ p_s = (xb_vecMxf32*) p_inp_scale;
@@ -303,17 +364,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
 
         WORD32 num_simd4_ops = (length_per_step >> LOG2_PDX_M);
         num_rem_inps = (length_per_step & (PDX_M - CONST_ONE));
-        num_rem_outs = num_rem_inps * SIZE_OF_FLOAT;
-
-        p_x1 = (xb_vecMx8*) p_scratch_buff;
-        ax1 = PDX_LA_MX8_PP(p_x1);
-        p_z1 = (xb_vecMxf32*) p_out;
-
-        p_s = (xb_vecMxf32*) p_inp_scale;
-        as = PDX_LA_MXF32_PP(p_s);
-
-        p_zb = (xb_vecMx32*) p_inp_zero_bias;
-        azb = PDX_LA_MX32_PP(p_zb);
+        num_rem_outs = (num_rem_inps * SIZE_OF_FLOAT);
 
         /* Number of times leading_dim_idx loop should be
          * iterated to avoid overwriting of inputs in
@@ -347,6 +398,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
                         + (leading_dim_idx * length_per_step) + axis_index);
 
                 PDX_LA32_MX8_IP(x, ax1, p_x1);
+                x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
 
                 x = PDX_SUB_MX32(x, zb1);
                 z = PDX_MUL_MXF32(x, s1);
@@ -355,7 +407,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
             }
         }
         /* Remaining scale and zero_bias values are loaded */
-        if((axis_count % CONST_FOUR) != 0)
+        if((axis_count & CONST_THREE) != 0)
         {
             PDX_LAV_MXF32_XP(s1, as, p_s, num_rem_outs);
             PDX_LAV_MX32_XP(zb1, azb, p_zb, num_rem_outs);
@@ -376,6 +428,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
                         + (leading_dim_idx * length_per_step) + axis_index);
 
                 PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
+                x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
 
                 x = PDX_SUB_MX32(x, zb1);
                 z = PDX_MUL_MXF32(x, s1);
@@ -384,6 +437,12 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
             }
         }
 
+        p_x1 = (xb_vecMx8*) (p_scratch_buff
+                + (leading_dim_idx * length_per_step));
+        ax1 = PDX_LA_MX8_PP(p_x1);
+
+        p_z1 = (xb_vecMxf32*) (p_out
+                + (leading_dim_idx * length_per_step));
         /* Handling remaining leading_dims row wise. */
         for (; leading_dim_idx < leading_dims;
                 leading_dim_idx++)
@@ -397,52 +456,36 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
             p_zb = (xb_vecMx32*) p_inp_zero_bias;
             azb = PDX_LA_MX32_PP(p_zb);
 
+            PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
+            PDX_LAV_MXF32_XP(s1, as, p_s, num_rem_outs);
+            PDX_LAV_MX32_XP(zb1, azb, p_zb, num_rem_outs);
+
+            x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
+
+            x = PDX_SUB_MX32(x, zb1);
+            z = PDX_MUL_MXF32(x, s1);
+            PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
+
             for (i = 0; i < num_simd4_ops; i++)
             {
                 PDX_LA32_MX8_IP(x, ax1, p_x1);
                 PDX_LA_MXF32_IP(s1, as, p_s);
                 PDX_LA_MX32_IP(zb1, azb, p_zb);
 
+                x = PDX_SRAI_MX32(x, SHIFT_FACTOR_4_BIT);
+
                 x = PDX_SUB_MX32(x, zb1);
                 z = PDX_MUL_MXF32(x, s1);
                 PDX_SA_MXF32_IP(z, az1, p_z1);
             }
-            PDX_LAV32_MX8_XP(x, ax1, p_x1, num_rem_inps);
-            PDX_LAV_MXF32_XP(s1, as, p_s, num_rem_outs);
-            PDX_LAV_MX32_XP(zb1, azb, p_zb, num_rem_outs);
-
-            x = PDX_SUB_MX32(x, zb1);
-            z = PDX_MUL_MXF32(x, s1);
-            PDX_SAV_MXF32_XP(z, az1, p_z1, num_rem_outs);
-            PDX_SAPOS_MXF32_FP(az1, p_z1);
         }
+        PDX_SAPOS_MXF32_FP(az1, p_z1);
     }
     /* When axis is not given or axis is not last dim */
     else
     {
-        /* Code for unpacking nibbles to bytes.
-         * Unpacked nibbles are right justified by 4 bits
-         * before storing to a byte.
-         */
-        for (i = 0; i < num_simd_nibbles; i++)
-        {
-            PDX_LAV_4MX8_XP(x0, ax0, p_x0, 8);
-            odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
-            even_nibble = PDX_AND_4MX8(x0, mask_lower_nibble);
-            z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
-                    PDX_SELI_8B_INTERLEAVE_1_LO);
-            PDX_SA_4MX8_IP(z0, az0, p_z0);
-        }
-
-        PDX_LAV_4MX8_XP(x0, ax0, p_x0, offset);
-        odd_nibble = PDX_SLLI_4MX8(x0, SHIFT_FACTOR_4_BIT);
-        even_nibble = PDX_AND_4MX8(x0, mask_lower_nibble);
-
-        z0 = PDX_SELI_4MX8(odd_nibble, even_nibble,
-                PDX_SELI_8B_INTERLEAVE_1_LO);
-
-        PDX_SAV_4MX8_XP(z0, az0, p_z0, num_rem_nibbles);
-        PDX_SAPOS_4MX8_FP(az0, p_z0);
+        num_rem_inps = (num_elm & (PDX_M - CONST_ONE));
+        num_rem_outs = (num_rem_inps * SIZE_OF_FLOAT);
 
         for (leading_dim_idx = 0; leading_dim_idx < (leading_dims - CONST_ONE);
                 leading_dim_idx++)
@@ -495,7 +538,7 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
                 p_inp_base = p_inp_base + (CONST_TWO * trailing_dims);
                 p_out_base = p_out_base + (CONST_TWO * trailing_dims);
             }
-            if ((axis_count % CONST_TWO) != 0)
+            if ((axis_count & CONST_ONE) != 0)
             {
                 s1 = (p_inp_scale[axis_index] / SCALE_FACTOR_4_BIT);
                 zb1 = (p_inp_zero_bias[axis_index] << SHIFT_FACTOR_4_BIT);
@@ -564,8 +607,8 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
             PDX_SAV_MXF32_XP(z, az2, p_z2, num_rem_outs);
             PDX_SAPOS_MXF32_FP(az2, p_z2);
 
-            p_inp_base = p_inp_base + (2 * trailing_dims);
-            p_out_base = p_out_base + (2 * trailing_dims);
+            p_inp_base = p_inp_base + (CONST_TWO * trailing_dims);
+            p_out_base = p_out_base + (CONST_TWO * trailing_dims);
         }
         for (; axis_index < axis_count; axis_index++)
         {

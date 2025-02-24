@@ -114,6 +114,7 @@
 
 #define MASK_LOWER_NIBBLE            240
 #define STEP_BY_8_BYTES              8
+#define MASK_HIGHER_NIBBLE           15
 
 /* Macros for constants */
 #define CONST_ONE                    1
@@ -122,6 +123,7 @@
 #define CONST_FOUR                   4
 #define CONST_FIVE                   5
 #define CONST_SIX                    6
+#define CONST_EIGHT                  8
 
 #define LOOP_UNROLL_BY_8             8
 #define IS_NOT_32_MULTIPLE           31
