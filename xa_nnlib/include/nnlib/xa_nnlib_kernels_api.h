@@ -613,6 +613,90 @@ WORD32 xa_nn_elm_clamp_broadcast_5D_16_16(WORD16 *__restrict__ p_out,
         const WORD32 *const p_max_shape,
         WORD32 num_inp_dims);
 
+WORD32 xa_nn_elm_sub_32xf32xf32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const FLOAT32 *p_inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_32xf32xf32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const FLOAT32 inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_32xf32xf32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const FLOAT32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        FLOAT32 alpha);
+
+WORD32 xa_nn_elm_sub_32xf32x32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const FLOAT32 *p_inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_32xf32x32_f32(FLOAT32 *p_out,
+        const WORD32 *p_inp1,
+        const FLOAT32 inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_32xf32x32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const WORD32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const FLOAT32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        WORD32 alpha);
+
+WORD32 xa_nn_elm_sub_f32x32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const WORD32 *p_inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_f32x32xf32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const WORD32 inp2,
+        FLOAT32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_f32x32xf32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const FLOAT32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const WORD32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        FLOAT32 alpha);
+
+WORD32 xa_nn_elm_sub_f32x32x32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const WORD32 *p_inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_scalar_f32x32x32_f32(FLOAT32 *p_out,
+        const FLOAT32 *p_inp1,
+        const WORD32 inp2,
+        WORD32 alpha,
+        WORD32 num_elm);
+
+WORD32 xa_nn_elm_sub_broadcast_5D_f32x32x32_f32(FLOAT32 *__restrict__ p_out,
+        const WORD32 *const p_out_shape,
+        const FLOAT32 *__restrict__ p_inp1,
+        const WORD32 *const p_inp1_shape,
+        const WORD32 *__restrict__ p_inp2,
+        const WORD32 *const p_inp2_shape,
+        WORD32 num_inp_dims,
+        WORD32 alpha);
+
 #if defined(__cplusplus)
 }
 #endif

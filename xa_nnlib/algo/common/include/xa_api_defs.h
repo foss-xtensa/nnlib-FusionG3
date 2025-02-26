@@ -28,7 +28,7 @@
 /*****************************************************************************/
 /* API version */
 #define XA_APIVERSION_MAJOR 1
-#define XA_APIVERSION_MINOR 1
+#define XA_APIVERSION_MINOR 2
 
 /* last compatible version */
 /* sometimes a new API version is just for a bugfix, or a added feature  in */
@@ -36,7 +36,7 @@
 /* made for an older version, library API can then be upgraded to newer API */
 /* version after checking for compatibility or by adding features           */
 #define XA_LASTCOMP_APIVERSION_MAJOR        1
-#define XA_LASTCOMP_APIVERSION_MINOR        0
+#define XA_LASTCOMP_APIVERSION_MINOR        1
 
 #define XA_STR(str)                            #str
 #define XA_MAKE_VERSION_STR(maj, min)        XA_STR(maj) "." XA_STR(min)

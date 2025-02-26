@@ -471,7 +471,6 @@ static inline void internal_elm_sub_broadcast_1D_scalar_32xf32xf32_f32(
     {
         y = PDX_LSR_F32_I(p_inp2, 0);
         ax = PDX_LA_MX32_PP(p_i1);
-#pragma unroll 16
         /* unroll the loop by x4 for SIMD */
         for (i = 0; i < (num_elm >> LOG2_PDX_M); i++)
         {
