@@ -20,27 +20,16 @@
 
 ******************************************************************************/
 
+/*
+    tables for tanhf() approximation
+*/
+#ifndef SIGMOID_TBL_H__
+#define SIGMOID_TBL_H__
 
-#ifndef __XA_NNLIB_DEFINITIONS_H__
-#define __XA_NNLIB_DEFINITIONS_H__
+#include "xa_type_def.h"
+#include "xa_nnlib_common_internal.h"
 
-#include "xa_api_defs.h"
+extern const FLOAT32 c[2];
+extern const FLOAT32 p[7];
 
-/* Identification Strings */
-
-#define LIBNAME "FusionG3 Neural Network Library"
-#define LIBVERSION "1.2.0"
-
-#define LIB_APIVERSION_MAJOR 1
-#define LIB_APIVERSION_MINOR 2
-
-#if LIB_APIVERSION_MAJOR != XA_APIVERSION_MAJOR || \
-LIB_APIVERSION_MINOR != XA_APIVERSION_MINOR
-#error "Version Mismatch"
 #endif
-
-#define LIB_APIVERSION              XA_MAKE_VERSION_STR(\
-                                    LIB_APIVERSION_MAJOR, \
-                                    LIB_APIVERSION_MINOR)
-
-#endif /* __XA_NNLIB_DEFINITIONS_H__ */

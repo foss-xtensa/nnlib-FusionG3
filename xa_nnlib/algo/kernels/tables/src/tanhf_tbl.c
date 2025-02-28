@@ -20,27 +20,18 @@
 
 ******************************************************************************/
 
+#include "tanhf_tbl.h"
 
-#ifndef __XA_NNLIB_DEFINITIONS_H__
-#define __XA_NNLIB_DEFINITIONS_H__
+const WORD32 tbl[3] = {(WORD32) 1549082005L, /* 1/ln(2), Q30 */
+    (WORD32) 127 - 31, (WORD32) 255};
 
-#include "xa_api_defs.h"
+const FLOAT32 polytanhf_tbl[4]=
+{
+    1.6437442973e-002,
+    -5.2661579102e-002,
+    1.3320191205e-001,
+    -3.3332869411e-001
+};
 
-/* Identification Strings */
+const FLOAT32 halfln3={0.5493061542510986328125} ; /* log(3)/2 - tanh(log(3)/2)==0.5 */
 
-#define LIBNAME "FusionG3 Neural Network Library"
-#define LIBVERSION "1.2.0"
-
-#define LIB_APIVERSION_MAJOR 1
-#define LIB_APIVERSION_MINOR 2
-
-#if LIB_APIVERSION_MAJOR != XA_APIVERSION_MAJOR || \
-LIB_APIVERSION_MINOR != XA_APIVERSION_MINOR
-#error "Version Mismatch"
-#endif
-
-#define LIB_APIVERSION              XA_MAKE_VERSION_STR(\
-                                    LIB_APIVERSION_MAJOR, \
-                                    LIB_APIVERSION_MINOR)
-
-#endif /* __XA_NNLIB_DEFINITIONS_H__ */

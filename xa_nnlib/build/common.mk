@@ -129,7 +129,6 @@ $(LIBOBJ): $(OBJ_LIBOBJS) $(OBJ_LIBOSOBJS)
 	$(QUIET) -$(RM) $(TEMPOBJ)
 endif 
 
-
 $(OBJ_LIBOBJS): $(OBJDIR)/%.o: %.c
 	@echo "Compiling $<"
 	$(QUIET) $(CC) -o $@ $(OPT_O3) $(CFLAGS) $(INCLUDES) -c $<
@@ -137,9 +136,7 @@ $(OBJ_LIBOBJS): $(OBJDIR)/%.o: %.c
 $(OBJ_LIBOSOBJS): $(OBJDIR)/%.o: %.c
 	@echo "Compiling $<"
 	$(QUIET) $(CC) -o $@ $(OPT_OS) $(CFLAGS) $(INCLUDES) -c $<
-		
-	
-	
+
 $(LIB): %.a: $(OBJDIR)/%.o
 	@echo "Creating Library $@"
 	$(QUIET) $(AR) rc $@ $^
