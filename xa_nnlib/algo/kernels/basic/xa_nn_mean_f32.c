@@ -167,7 +167,6 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
     XA_NNLIB_ARG_CHK_ALIGN(p_out_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
     XA_NNLIB_ARG_CHK_ALIGN(p_inp_shape, sizeof(WORD32), UNSUPPORTED_PARAM);
 
-    WORD32 axis_itr = 0, inp_itr = 0, out_itr = 0;
     WORD32 num_elm_in_axis = CONST_ONE;
 
     WORD32 new_axes[MAX_DIMS] = {0};   // Buffer for new axes
