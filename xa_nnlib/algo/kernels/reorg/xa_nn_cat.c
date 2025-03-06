@@ -73,7 +73,7 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
         {
             for (i = 0; i < num_inp; i++)
             {
-                XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] <= 0), UNSUPPORTED_PARAM);
+                XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] < 0), UNSUPPORTED_PARAM);
                 XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] != pp_inps_shape[0][d]), UNSUPPORTED_PARAM);
             }
         }
@@ -81,7 +81,7 @@ WORD32 xa_nn_cat(WORD8 *__restrict__ p_out,
         {
             for (i = 0; i < num_inp; i++)
             {
-               XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] <= 0), UNSUPPORTED_PARAM);
+               XA_NNLIB_ARG_CHK_COND((pp_inps_shape[i][d] < 0), UNSUPPORTED_PARAM);
             }
         }
     }
