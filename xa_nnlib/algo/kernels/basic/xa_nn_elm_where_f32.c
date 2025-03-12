@@ -1138,7 +1138,7 @@ static inline void internal_elm_where_two_vecs_const(
         PDX_LAV32_MX8_XP(c, ac, p_c, rem_cond_elms);
         bool_data = PDX_EQ_MX32(c, CONST_ONE);
         z = PDX_MOV_MXF32_T(x, y, bool_data);
-        PDX_SA_MXF32_IP(z, az, p_z);
+        PDX_SAV_MXF32_XP(z, az, p_z, rem_inp_elms);
 
     } /* If both input1 and input2 are constants but cond is not constant */
 
@@ -1167,7 +1167,7 @@ static inline void internal_elm_where_two_vecs_const(
         /* Remaining iterations */
         PDX_LAV_MXF32_XP(y, ay, p_y, rem_inp_elms);
         z = PDX_MOV_MXF32_T(x, y, bool_data);
-        PDX_SA_MXF32_IP(z, az, p_z);
+        PDX_SAV_MXF32_XP(z, az, p_z, rem_inp_elms);
 
     } /* If both input1 and cond are constants but input2 is not constant */
 
@@ -1196,7 +1196,7 @@ static inline void internal_elm_where_two_vecs_const(
         /* Remaining iterations */
         PDX_LAV_MXF32_XP(x, ax, p_x, rem_inp_elms);
         z = PDX_MOV_MXF32_T(x, y, bool_data);
-        PDX_SA_MXF32_IP(z, az, p_z);
+        PDX_SAV_MXF32_XP(z, az, p_z, rem_inp_elms);
 
     } /* If both input2 and cond are constants but input1 is not constant */
 
