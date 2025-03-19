@@ -80,10 +80,6 @@ WORD32 xa_nn_elm_dequantize_asym4u_f32(FLOAT32 *__restrict__ p_out,
     {
         XA_NNLIB_ARG_CHK_COND(((isnan(*p_inp_scale)) || (isinf(*p_inp_scale))),
                 UNSUPPORTED_PARAM);
-        XA_NNLIB_ARG_CHK_COND(
-                ((p_inp_zero_bias[0] < UINT4_LOWER_LIMIT) ||
-                 (p_inp_zero_bias[0] > UINT4_UPPER_LIMIT)),
-                UNSUPPORTED_PARAM);
 
         num_elm = total_num_elm;
     }
@@ -100,10 +96,6 @@ WORD32 xa_nn_elm_dequantize_asym4u_f32(FLOAT32 *__restrict__ p_out,
         {
             XA_NNLIB_ARG_CHK_COND(
                     ((isnan(p_inp_scale[i])) || (isinf(p_inp_scale[i]))),
-                    UNSUPPORTED_PARAM);
-            XA_NNLIB_ARG_CHK_COND(
-                    ((p_inp_zero_bias[i] < UINT4_LOWER_LIMIT) ||
-                     (p_inp_zero_bias[i] > UINT4_UPPER_LIMIT)),
                     UNSUPPORTED_PARAM);
         }
 

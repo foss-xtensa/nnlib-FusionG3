@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2024-2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -52,7 +52,7 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
     /* Invalid input checks
      * quant_min should be >= 0
      * quant_max should be <= 255
-     * num_inp_dims should be greater than 0 and less than or equal to 5
+     * num_inp_dims should be greater than 0
      * p_inp_shape values should be positive
      */
     XA_NNLIB_ARG_CHK_COND((quant_min < UINT8_LOWER_LIMIT), UNSUPPORTED_PARAM);
@@ -78,16 +78,10 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
 
     if (p_axis == NULL)
     {
-        /* out_scale should not be equal to zero, nan and infinity
-         * out_zero_bias should be in the range [0,255]
-         */
+        /* out_scale should not be equal to zero, nan and infinity */
         XA_NNLIB_ARG_CHK_COND(
                 ((0 == *p_out_scale) || (isnan(*p_out_scale)) ||
                         (isinf(*p_out_scale))), UNSUPPORTED_PARAM);
-        XA_NNLIB_ARG_CHK_COND(
-                ((p_out_zero_bias[0] < UINT8_LOWER_LIMIT) ||
-                        (p_out_zero_bias[0] > UINT8_UPPER_LIMIT)),
-                UNSUPPORTED_PARAM);
         for (i = 0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
@@ -100,9 +94,7 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
         /* Invalid input checks
          * axis should be in the range [0,num_inp_dims-1]
          * out_scale should not be equal to zero, nan and infinity
-         * out_zero_bias should be in the range [0,255]
          */
-
         XA_NNLIB_ARG_CHK_COND(((axis < 0) || (axis >= num_inp_dims)),
                 UNSUPPORTED_PARAM);
         for (i = 0; i < p_inp_shape[axis]; i++)
@@ -110,10 +102,6 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
             XA_NNLIB_ARG_CHK_COND(
                     ((0 == p_out_scale[i]) || (isnan(p_out_scale[i])) ||
                             (isinf(p_out_scale[i]))), UNSUPPORTED_PARAM);
-            XA_NNLIB_ARG_CHK_COND(
-                    ((p_out_zero_bias[i] < UINT8_LOWER_LIMIT) ||
-                            (p_out_zero_bias[i] > UINT8_UPPER_LIMIT)),
-                            UNSUPPORTED_PARAM);
         }
 
         /* Calculating leading dims */

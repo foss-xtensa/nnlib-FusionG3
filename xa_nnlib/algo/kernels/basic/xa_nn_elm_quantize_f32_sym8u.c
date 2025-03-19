@@ -49,7 +49,7 @@ WORD32 xa_nn_elm_quantize_f32_sym8u(UWORD8 *__restrict__ p_out,
     /* Invalid input checks
      * quant_min should be >= 0
      * quant_max should be <= 255
-     * num_inp_dims should be greater than 0 and less than or equal to 5
+     * num_inp_dims should be greater than 0
      * p_inp_shape values should be positive
      */
     XA_NNLIB_ARG_CHK_COND((quant_min < UINT8_LOWER_LIMIT), UNSUPPORTED_PARAM);

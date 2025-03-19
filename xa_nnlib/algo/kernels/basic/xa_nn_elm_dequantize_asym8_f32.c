@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 Cadence Design Systems, Inc.
+ * Copyright (c) 2024-2025 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -70,9 +70,6 @@ WORD32 xa_nn_elm_dequantize_asym8_f32(FLOAT32 *__restrict__ p_out,
     {
         XA_NNLIB_ARG_CHK_COND(((isnan(*p_inp_scale)) || (isinf(*p_inp_scale))),
                 UNSUPPORTED_PARAM);
-        XA_NNLIB_ARG_CHK_COND(
-                ((p_inp_zero_bias[0] < INT8_LOWER_LIMIT) || (p_inp_zero_bias[0] > INT8_UPPER_LIMIT)),
-                UNSUPPORTED_PARAM);
         for (i = 0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
@@ -92,9 +89,6 @@ WORD32 xa_nn_elm_dequantize_asym8_f32(FLOAT32 *__restrict__ p_out,
         {
             XA_NNLIB_ARG_CHK_COND(
                     ((isnan(p_inp_scale[i])) || (isinf(p_inp_scale[i]))),
-                    UNSUPPORTED_PARAM);
-            XA_NNLIB_ARG_CHK_COND(
-                    ((p_inp_zero_bias[i] < INT8_LOWER_LIMIT) || (p_inp_zero_bias[i] > INT8_UPPER_LIMIT)),
                     UNSUPPORTED_PARAM);
         }
 
