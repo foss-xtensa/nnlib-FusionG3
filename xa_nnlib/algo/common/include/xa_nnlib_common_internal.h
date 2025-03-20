@@ -93,6 +93,19 @@
 #define LOG2_SIZE_FLOAT              2
 #define NAN                          0x7fc00000
 
+#define INT16_LOWER_LIMIT           -32768
+#define INT16_UPPER_LIMIT            32767
+#define UINT16_LOWER_LIMIT           0
+#define UINT16_UPPER_LIMIT           65535
+#define INT8_LOWER_LIMIT            -128
+#define INT8_UPPER_LIMIT             127
+#define UINT8_LOWER_LIMIT            0
+#define UINT8_UPPER_LIMIT            255
+#define INT4_LOWER_LIMIT            -8
+#define INT4_UPPER_LIMIT             7
+#define UINT4_LOWER_LIMIT            0
+#define UINT4_UPPER_LIMIT            15
+
 #define SIGMOID_MIN_BOUND           -103.9721f
 #define F32_MIN_VALUE                (FLOAT32)-3.4028235e38
 
