@@ -796,7 +796,9 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
                 WORD32 d4 = 0, d0d2, d1, d3;
                 for(d0d2 = 0; d0d2 < (Dim0 * Dim2); d0d2++)
                 {
-                    WORD32 base_offset = (d0d2 * Dim3 * Dim4);
+                    WORD32 d0 = d0d2 / Dim2;
+                    WORD32 d2 = d0d2 % Dim2;
+                    WORD32 base_offset = (d0 * Dim1 * Dim2 + d2) * Dim3 * Dim4;
                     sum = PDX_ZERO_MXF32();
                     for (d4 = 0; d4 < (Dim4 - CONST_THREE) ; d4 += CONST_FOUR)
                     {
