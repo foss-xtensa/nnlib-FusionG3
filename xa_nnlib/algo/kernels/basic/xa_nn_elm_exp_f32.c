@@ -53,7 +53,8 @@ WORD32 xa_nn_elm_exp_f32_f32(FLOAT32 *__restrict__ p_out,
     for (n = 0; n < (num_elm + PDX_M - CONST_ONE) >> LOG2_PDX_M; n++)
     {
 
-        PDX_LAV_MXF32_XP(x0, align_x, p_input, num_elm * SIZE_OF_FLOAT );
+        PDX_LAV_MXF32_XP(x0, align_x, p_input,
+                (UWORD8*) p_inp + num_elm * SIZE_OF_FLOAT - (UWORD8*) p_input);
 
         xb_vecMxf32 approx;
         xb_vecMx32 in_int, frac, exp, t, exp0, exp1;
@@ -149,7 +150,8 @@ WORD32 xa_nn_elm_exp_f32_f32(FLOAT32 *__restrict__ p_out,
         out_val = PDX_MUL_MXF32(approx, scale0);
         out_val = PDX_MUL_MXF32(out_val, scale1);
 
-        PDX_SAV_MXF32_XP(out_val, align_z, p_output, num_elm * SIZE_OF_FLOAT );
+        PDX_SAV_MXF32_XP(out_val, align_z, p_output,
+                (UWORD8*) p_out + num_elm * SIZE_OF_FLOAT - (UWORD8*) p_output);
 
     }
 
