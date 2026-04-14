@@ -381,7 +381,7 @@ static inline void internal_elm_mul_broadcast_1D_scalar_f32xf32_f32(
             z0 = PDX_MUL_MXF32(x0, y0);
             PDX_SA_MXF32_IP(z0, az, p_z);
         }
-        num_elm = num_elm - (n - CONST_ONE) * LOOP_UNROLL_BY_8;
+        num_elm = num_elm - n * LOOP_UNROLL_BY_8;
         if(num_elm >> LOG2_PDX_M)
         {
             PDX_LA_MXF32_IP(x0, ax, p_x);
