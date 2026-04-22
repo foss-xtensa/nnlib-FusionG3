@@ -369,7 +369,6 @@ static inline void internal_elm_mul_broadcast_1D_scalar_f32xf32_f32(
     }
     else
     {
-
         /* unroll the loop by x8 for SIMD */
         for (n = 0; n < (num_elm >> LOG2_PDX_2M); n++)
         {

@@ -23,7 +23,6 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
-#include <stdio.h>
 
 /* Code for Input1 : Int , Input2 : Float and alpha : Float */
 WORD32 xa_nn_elm_sub_32xf32xf32_f32(FLOAT32 *p_out,

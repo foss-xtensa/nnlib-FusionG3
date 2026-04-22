@@ -24,6 +24,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
+#include "nanf_tbl.h"
 
 /*
  *
@@ -118,7 +119,7 @@ WORD32 xa_nn_native_layer_norm_f32_f32(FLOAT32 *p_out,
         ax = PDX_Z_ALIGN();
         ay = PDX_Z_ALIGN();
 
-        FLOAT32 rstd = NAN;
+        FLOAT32 rstd = xa_nnlib_qNaNf.f;
 
         /* Initialize the mean output with 0 */
         xb_vecMxf32 x;

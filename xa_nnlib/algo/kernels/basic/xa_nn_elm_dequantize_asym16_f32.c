@@ -24,7 +24,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
-#include <math.h>
+#include "inf_tbl.h"
 
 WORD32 xa_nn_elm_dequantize_asym16_f32(FLOAT32 *__restrict__ p_out,
         const WORD16 *__restrict__ p_inp,
@@ -66,10 +66,17 @@ WORD32 xa_nn_elm_dequantize_asym16_f32(FLOAT32 *__restrict__ p_out,
     WORD32 length_per_step = 0;
     WORD32 axis_count = CONST_ONE;
 
+    vbool1 b_nan, b_plus_inf;
+    FLOAT32 plus_inf = xa_nnlib_plusInff.f;
+    FLOAT32 abs_scale;
+
     if (p_axis == NULL)
     {
-        XA_NNLIB_ARG_CHK_COND(((isnan(*p_inp_scale)) || (isinf(*p_inp_scale))),
-                UNSUPPORTED_PARAM);
+        b_nan  = XT_UN_S(*p_inp_scale, *p_inp_scale);
+        abs_scale = XT_ABS_S(*p_inp_scale);
+        b_plus_inf  = XT_OEQ_S(abs_scale, plus_inf);
+
+        XA_NNLIB_ARG_CHK_COND((b_nan || b_plus_inf), UNSUPPORTED_PARAM);
         for (i = 0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
@@ -86,8 +93,11 @@ WORD32 xa_nn_elm_dequantize_asym16_f32(FLOAT32 *__restrict__ p_out,
 
         for (i = 0; i < p_inp_shape[*p_axis]; i++)
         {
-            XA_NNLIB_ARG_CHK_COND(
-                    ((isnan(p_inp_scale[i])) || (isinf(p_inp_scale[i]))),
+            b_nan = XT_UN_S(p_inp_scale[i], p_inp_scale[i]);
+            abs_scale = XT_ABS_S(p_inp_scale[i]);
+            b_plus_inf = XT_OEQ_S(abs_scale, plus_inf);
+
+            XA_NNLIB_ARG_CHK_COND((b_nan || b_plus_inf),
                     UNSUPPORTED_PARAM);
         }
 

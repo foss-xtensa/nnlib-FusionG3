@@ -81,4 +81,7 @@ typedef XA_ERRORCODE xa_codec_func_t(xa_codec_handle_t p_xa_module_obj,
                      WORD32            i_idx,
                      pVOID             pv_value);
 
+/*    union data type for writing FLOAT32 constants in a bitexact form */
+union UFLOAT32UWORD32 {  UWORD32  u;  FLOAT32 f; };
+
 #endif /* __XA_TYPE_DEF_H__ */

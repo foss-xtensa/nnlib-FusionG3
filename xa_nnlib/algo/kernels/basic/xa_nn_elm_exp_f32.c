@@ -52,7 +52,6 @@ WORD32 xa_nn_elm_exp_f32_f32(FLOAT32 *__restrict__ p_out,
     WORD32 n;
     for (n = 0; n < (num_elm + PDX_M - CONST_ONE) >> LOG2_PDX_M; n++)
     {
-
         PDX_LAV_MXF32_XP(x0, align_x, p_input,
                 (UWORD8*) p_inp + num_elm * SIZE_OF_FLOAT - (UWORD8*) p_input);
 

@@ -23,7 +23,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
-#include <math.h>
+#include "inf_tbl.h"
 
 WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
         const FLOAT32 *__restrict__ p_inp,
@@ -76,12 +76,18 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
     WORD32 length_per_step = 0;
     WORD32 axis_count = CONST_ONE;
 
+    vbool1 b_zero_nan, b_plus_inf;
+    FLOAT32 plus_inf = xa_nnlib_plusInff.f;
+    FLOAT32 abs_scale;
+
     if (p_axis == NULL)
     {
         /* out_scale should not be equal to zero, nan and infinity */
-        XA_NNLIB_ARG_CHK_COND(
-                ((0 == *p_out_scale) || (isnan(*p_out_scale)) ||
-                        (isinf(*p_out_scale))), UNSUPPORTED_PARAM);
+        b_zero_nan  = XT_UEQ_S(*p_out_scale, 0);
+        abs_scale = XT_ABS_S(*p_out_scale);
+        b_plus_inf  = XT_OEQ_S(abs_scale, plus_inf);
+
+        XA_NNLIB_ARG_CHK_COND((b_zero_nan || b_plus_inf), UNSUPPORTED_PARAM);
         for (i = 0; i < num_inp_dims; i++)
         {
             num_elm *= p_inp_shape[i];
@@ -99,9 +105,12 @@ WORD32 xa_nn_elm_quantize_f32_asym8u(UWORD8 *__restrict__ p_out,
                 UNSUPPORTED_PARAM);
         for (i = 0; i < p_inp_shape[axis]; i++)
         {
-            XA_NNLIB_ARG_CHK_COND(
-                    ((0 == p_out_scale[i]) || (isnan(p_out_scale[i])) ||
-                            (isinf(p_out_scale[i]))), UNSUPPORTED_PARAM);
+            b_zero_nan = XT_UEQ_S(p_out_scale[i], 0);
+            abs_scale = XT_ABS_S(p_out_scale[i]);
+            b_plus_inf = XT_OEQ_S(abs_scale, plus_inf);
+
+            XA_NNLIB_ARG_CHK_COND((b_zero_nan || b_plus_inf),
+                    UNSUPPORTED_PARAM);
         }
 
         /* Calculating leading dims */

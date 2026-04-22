@@ -20,16 +20,14 @@
 
 ******************************************************************************/
 
-/*
-    tables for tanhf() approximation
-*/
-#ifndef __SIGMOID_TBL_H__
-#define __SIGMOID_TBL_H__
+#ifndef __INF_TBL_H__
+#define __INF_TBL_H__
 
 #include "xa_type_def.h"
 #include "xa_nnlib_common_internal.h"
 
-extern const FLOAT32 c[2];
-extern const FLOAT32 p[7];
+extern const union UFLOAT32UWORD32 xa_nnlib_minusInff; /* -Inf */
+extern const union UFLOAT32UWORD32 xa_nnlib_plusInff; /* +Inf */
 
-#endif /* __SIGMOID_TBL_H__ */
+#endif /* __INF_TBL_H__ */
+

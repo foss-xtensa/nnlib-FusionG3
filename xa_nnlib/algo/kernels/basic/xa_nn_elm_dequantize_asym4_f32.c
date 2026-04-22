@@ -23,7 +23,7 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
-#include <math.h>
+#include "inf_tbl.h"
 
 WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
         const WORD8 *__restrict__ p_inp,
@@ -76,10 +76,17 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
     /* Flag to check whether axis is given or not */
     WORD32 has_axis = 0;
 
+    vbool1 b_nan, b_plus_inf;
+    FLOAT32 plus_inf = xa_nnlib_plusInff.f;
+    FLOAT32 abs_scale;
+
     if (p_axis == NULL)
     {
-        XA_NNLIB_ARG_CHK_COND(((isnan(*p_inp_scale)) || (isinf(*p_inp_scale))),
-                UNSUPPORTED_PARAM);
+        b_nan  = XT_UN_S(*p_inp_scale, *p_inp_scale);
+        abs_scale = XT_ABS_S(*p_inp_scale);
+        b_plus_inf  = XT_OEQ_S(abs_scale, plus_inf);
+
+        XA_NNLIB_ARG_CHK_COND((b_nan || b_plus_inf), UNSUPPORTED_PARAM);
 
         num_elm = total_num_elm;
     }
@@ -94,8 +101,11 @@ WORD32 xa_nn_elm_dequantize_asym4_f32(FLOAT32 *__restrict__ p_out,
 
         for (i = 0; i < p_inp_shape[*p_axis]; i++)
         {
-            XA_NNLIB_ARG_CHK_COND(
-                    ((isnan(p_inp_scale[i])) || (isinf(p_inp_scale[i]))),
+            b_nan = XT_UN_S(p_inp_scale[i], p_inp_scale[i]);
+            abs_scale = XT_ABS_S(p_inp_scale[i]);
+            b_plus_inf = XT_OEQ_S(abs_scale, plus_inf);
+
+            XA_NNLIB_ARG_CHK_COND((b_nan || b_plus_inf),
                     UNSUPPORTED_PARAM);
         }
 

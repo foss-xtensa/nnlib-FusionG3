@@ -91,7 +91,6 @@
 #define LOG2_SIZE_INT                2 
 /* log2(size of float) */
 #define LOG2_SIZE_FLOAT              2
-#define NAN                          0x7fc00000
 
 #define INT16_LOWER_LIMIT           -32768
 #define INT16_UPPER_LIMIT            32767
