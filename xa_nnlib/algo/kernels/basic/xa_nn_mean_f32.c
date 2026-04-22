@@ -23,7 +23,6 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 #include "xa_nnlib_common_internal.h"
-#include <string.h>
 
 // Function to check if two consecutive axes are contiguous
 static inline WORD32 are_two_axes_contiguous(WORD32 a, WORD32 b)
@@ -175,9 +174,8 @@ WORD32 xa_nn_mean_f32_f32(FLOAT32 *__restrict__ p_out,
     if (p_axis != NULL)
     {
         WORD32 current;
-        WORD32 dim_exist[MAX_DIMS];
+        WORD32 dim_exist[MAX_DIMS] = {0};
         WORD32 repeated_axis_dims = 0;
-        memset(dim_exist, 0, sizeof(dim_exist));
 
         for (axis_itr = 0; axis_itr < num_axis_dims; axis_itr++)
         {
