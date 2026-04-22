@@ -23,8 +23,8 @@
 /*
     tables for tanhf() approximation
 */
-#ifndef TANHF_TBL_H__
-#define TANHF_TBL_H__
+#ifndef __TANHF_TBL_H__
+#define __TANHF_TBL_H__
 
 #include "xa_type_def.h"
 #include "xa_nnlib_common_internal.h"
@@ -44,4 +44,4 @@ extern const FLOAT32 polytanhf_tbl[4];
 
 extern const FLOAT32 halfln3; /* log(3)/2 - tanh(log(3)/2)==0.5 */
 
-#endif
+#endif /* __TANHF_TBL_H__ */

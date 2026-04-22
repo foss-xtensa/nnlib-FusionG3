@@ -103,7 +103,9 @@ ACTIVATIONSOBJS = \
 TABLESOBJS = \
   expf_tbl.o \
   tanhf_tbl.o \
-  sigmoid_tbl.o 
+  sigmoid_tbl.o \
+  nanf_tbl.o \
+  inf_tbl.o 
 
 
 LIBOBJS = $(BASICOBJS) $(REORGOBJS) $(NORMOBJS) $(ACTIVATIONSOBJS) $(TABLESOBJS)
